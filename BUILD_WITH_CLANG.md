@@ -1,6 +1,6 @@
 # Clang ビルド方法 (Windows向け)
 
-このリポジトリには clang 向けの CMake プリセット `CMakePresets.json` を追加しました。
+CMake プリセット `CMakePresets.json` を参照。
 
 前提条件
 - CMake >= 3.28
@@ -32,10 +32,28 @@ cmake --build --preset clang-cl-ninja-debug
 3) テストを実行する
 
 ```powershell
-# ビルド後にテスト実行
-cd build
-ctest -C Debug --output-on-failure
+# ビルド後にテスト実行（このリポジトリは out-of-source ビルドを推奨しています）
+cd build/clang-ninja
+ctest --output-on-failure -V
 ```
+
+- `JsonTest` — 単体機能テスト（7 個のテストケースなど）
+- `JsonBenchmark` — ベンチマークをテストとしてラップしたもの（実行時間が長くなることがあります）
+
+ベンチマークや個別テストを実行したい時:
+
+```powershell
+# JsonBenchmark のみ実行
+cd build/clang-ninja
+ctest -R JsonBenchmark -V
+
+# JsonTest のみ実行
+ctest -R JsonTest -V
+```
+
+注意（ベンチマーク実行）:
+- `JsonBenchmark` の各ケースは多数の反復やファイル I/O を行うため実行に時間がかかります。CI 等で不要ならフィルタを使って実行を制限してください（例: `ctest -R JsonTest`）。
+- `JsonBenchmark.cpp` の一部 import 名はモジュール名 `rai.compiler.io.*` を使用するよう修正済みです（ビルドのためにモジュール名とファイルのエクスポート名が一致する必要があります）。
 
 注意
 - `clang-cl` を選ぶ際は Visual Studio のヘッダ/ライブラリが必要です（通常は Visual Studio の Developer Command Prompt / Developer PowerShell を使うと環境が整います）。

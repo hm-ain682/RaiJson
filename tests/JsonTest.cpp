@@ -1,12 +1,10 @@
 import rai.json.json_writer;
 import rai.json.json_binding;
-import rai.compiler.type_description;
 import rai.json.json_io;
 #include <gtest/gtest.h>
 #include <string>
 #include <tuple>
 
-using namespace rai::compiler;
 using namespace rai::json;
 
 /// @brief テスト用の構造体A。
@@ -138,78 +136,4 @@ TEST(JsonReaderTest, VirtualDispatchRead) {
 
     EXPECT_TRUE(b.w);
     EXPECT_FLOAT_EQ(b.y, 2.5f);
-}
-
-/// @brief Enum型のJSON変換テスト（ReferenceType::management）。
-TEST(JsonEnumFieldTest, EnumConversion) {
-    ReferenceType refType;
-    refType.management = ReferenceManagementKind::shared;
-
-    // Enum→JSON変換（全体比較）
-    // JSON5形式：キーに引用符なし
-    auto json = getJsonContent(refType);
-    EXPECT_EQ(json, "{destination:null,allowsNothing:false}");
-
-    // reference に変更
-    refType.management = ReferenceManagementKind::reference;
-    json = getJsonContent(refType);
-    EXPECT_EQ(json, "{destination:null}");
-
-    // pointer に変更
-    refType.management = ReferenceManagementKind::pointer;
-    json = getJsonContent(refType);
-    EXPECT_EQ(json, "{destination:null}");
-}
-
-/// @brief ポリモーフィック型（TypeDescription::substance）のJSON書き出しテスト。
-TEST(JsonPolymorphicFieldTest, WritePolymorphicType) {
-    TypeDescription typeDesc;
-    typeDesc.isMutable = true;
-    typeDesc.isVolatile = false;
-
-    // NamedType を設定
-    auto namedType = std::make_unique<NamedType>();
-    namedType->typeName = "int";
-    typeDesc.substance = std::move(namedType);
-
-    // JSON化（全体比較）
-    // JSON5形式：キーに引用符なし、文字列値には引用符あり
-    auto json = getJsonContent(typeDesc);
-    EXPECT_EQ(json, "{node:\"immediate\",typeName:\"int\",qualifiers:[\"mutable\"]}");
-}
-
-/// @brief ポリモーフィック型（TypeDescription::substance）のJSON読み込みテスト。
-TEST(JsonPolymorphicFieldTest, ReadPolymorphicType) {
-    const std::string json =
-        "{\"node\":\"immediate\",\"typeName\":\"int\",\"qualifiers\":[\"mutable\"]}";
-
-    TypeDescription typeDesc;
-    readJsonString(json, typeDesc);
-
-    EXPECT_TRUE(typeDesc.isMutable);
-    EXPECT_FALSE(typeDesc.isVolatile);
-    ASSERT_NE(typeDesc.substance, nullptr);
-
-    // ダウンキャストしてNamedTypeであることを確認
-    auto* namedType = dynamic_cast<NamedType*>(typeDesc.substance.get());
-    ASSERT_NE(namedType, nullptr);
-    EXPECT_EQ(namedType->typeName, "int");
-}
-
-/// @brief ポリモーフィック型でnullを扱うテスト。
-TEST(JsonPolymorphicFieldTest, NullPolymorphicType) {
-    TypeDescription typeDesc;
-    typeDesc.isMutable = false;
-    typeDesc.isVolatile = false;
-    typeDesc.substance = nullptr;
-
-    // JSON化（全体比較）
-    auto json = getJsonContent(typeDesc);
-    EXPECT_EQ(json, "null");
-
-    // 読み込み
-    const std::string jsonNull = "null";
-    TypeDescription typeDesc2;
-    readJsonString(jsonNull, typeDesc2);
-    EXPECT_EQ(typeDesc2.substance, nullptr);
 }

@@ -33,17 +33,11 @@ foreach(gtest_target gtest gtest_main gmock gmock_main)
   endif()
 endforeach()
 
-# Basic test that only depends on RaiJson
-add_executable(RaiJson_BasicTest BasicJsonTest.cpp)
-target_link_libraries(RaiJson_BasicTest PRIVATE RaiJson::RaiJson gtest_main)
-add_test(NAME RaiJson_BasicTest COMMAND RaiJson_BasicTest)
+# Build the more extensive tests
+add_executable(JsonTest JsonTest.cpp)
+target_link_libraries(JsonTest PRIVATE RaiJson::RaiJson gtest_main)
+add_test(NAME JsonTest COMMAND JsonTest)
 
-# If the main rai project is present, also build the more extensive tests that depend on rai_compiler_core
-if(TARGET rai_compiler_core)
-    add_executable(JsonTest JsonTest.cpp)
-    target_link_libraries(JsonTest PRIVATE RaiJson::RaiJson rai_compiler_core gtest_main)
-    add_test(NAME JsonTest COMMAND JsonTest)
-
-    add_executable(JsonBenchmark JsonBenchmark.cpp)
-    target_link_libraries(JsonBenchmark PRIVATE RaiJson::RaiJson rai_compiler_core gtest_main)
-endif()
+add_executable(JsonBenchmark JsonBenchmark.cpp)
+target_link_libraries(JsonBenchmark PRIVATE RaiJson::RaiJson gtest_main)
+add_test(NAME JsonBenchmark COMMAND JsonBenchmark)
