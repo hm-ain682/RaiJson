@@ -472,7 +472,7 @@ private:
 private:
     // @brief 数値をパース
     // @note 符号付き数値、16進数、10進数（整数・浮動小数点）をサポート
-    void parseNumber(char c) {
+    void parseNumber(char c, std::size_t tokenPos) {
         // 符号を保存
         bool isNegative = false;
         if (c == '+' || c == '-') {
@@ -504,13 +504,13 @@ private:
             if (isNegative) {
                 value = -value;
             }
-            tokenManager_.pushToken(json_token_detail::IntVal{value});
+            emitToken(json_token_detail::IntVal{value}, tokenPos);
             validateAfterValue();
             return;
         }
 
         // 10進数として処理
-        parseDecimalNumber(c, isNegative);
+        parseDecimalNumber(c, isNegative, tokenPos);
         validateAfterValue();
     }
 
@@ -550,7 +550,7 @@ private:
     // @brief 10進数をパース（整数部・小数部・指数部）
     // @param c 先頭文字
     // @param isNegative 符号が負かどうか
-    void parseDecimalNumber(char c, bool isNegative) {
+    void parseDecimalNumber(char c, bool isNegative, std::size_t tokenPos) {
         std::int64_t integerPart = 0;
         double fractionalPart = 0.0;
         bool hasDot = false;
@@ -630,14 +630,14 @@ private:
             if (isNegative) {
                 value = -value;
             }
-            tokenManager_.pushToken(json_token_detail::NumVal{value});
+            emitToken(json_token_detail::NumVal{value}, tokenPos);
         } else {
             // 整数
             std::int64_t value = integerPart;
             if (isNegative) {
                 value = -value;
             }
-            tokenManager_.pushToken(json_token_detail::IntVal{value});
+            emitToken(json_token_detail::IntVal{value}, tokenPos);
         }
     }
 
@@ -695,7 +695,7 @@ private:
         while (generateNextToken())
             ;
         // ストリーム終端マーカーを追加
-        tokenManager_.pushToken(json_token_detail::EndOfStreamTag{});
+        emitToken(json_token_detail::EndOfStreamTag{}, inputSource_.position());
     }
 
     // @brief 次のトークンを1つ生成してtokenManager_に追加
@@ -703,6 +703,7 @@ private:
     // @return まだ続きがあるならtrue、終端ならfalse。
     bool generateNextToken() {
         skipWhitespaceAndComments();
+        const std::size_t tokenPos = inputSource_.position();
         char c = peek();
 
         // 先頭文字でトークンの種類を判定
@@ -712,19 +713,19 @@ private:
                 return false;
             case '{':
                 consume();
-                tokenManager_.pushToken(json_token_detail::StartObjectTag{});
+                emitToken(json_token_detail::StartObjectTag{}, tokenPos);
                 break;
             case '}':
                 consume();
-                tokenManager_.pushToken(json_token_detail::EndObjectTag{});
+                emitToken(json_token_detail::EndObjectTag{}, tokenPos);
                 break;
             case '[':
                 consume();
-                tokenManager_.pushToken(json_token_detail::StartArrayTag{});
+                emitToken(json_token_detail::StartArrayTag{}, tokenPos);
                 break;
             case ']':
                 consume();
-                tokenManager_.pushToken(json_token_detail::EndArrayTag{});
+                emitToken(json_token_detail::EndArrayTag{}, tokenPos);
                 break;
             case ':': // コロンはスキップ（トークンとして生成しない）
                 consume();
@@ -734,33 +735,33 @@ private:
                 break;
             case '"':
             case '\'': // 文字列: 後にコロンがあればキー、なければ値
-                addStringOrKey(parseString(c));
+                addStringOrKey(parseString(c), tokenPos);
                 break;
             case '+': case '-': case '.':
             CASE_PART_DIGITS:
-                parseNumber(c);
+                parseNumber(c, tokenPos);
                 break;
             case 'n': // 予約語: null または識別子
-                addReservedWordOrIdentifier("null", json_token_detail::NullTag{});
+                addReservedWordOrIdentifier("null", json_token_detail::NullTag{}, tokenPos);
                 break;
             case 't': // 予約語: true または識別子
-                addReservedWordOrIdentifier("true", json_token_detail::BoolVal{true});
+                addReservedWordOrIdentifier("true", json_token_detail::BoolVal{true}, tokenPos);
                 break;
             case 'f': // 予約語: false または識別子
-                addReservedWordOrIdentifier("false", json_token_detail::BoolVal{false});
+                addReservedWordOrIdentifier("false", json_token_detail::BoolVal{false}, tokenPos);
                 break;
             case 'I': // 予約語: Infinity または識別子
                 addReservedWordOrIdentifier("Infinity",
-                    json_token_detail::NumVal{std::numeric_limits<double>::infinity()});
+                    json_token_detail::NumVal{std::numeric_limits<double>::infinity()}, tokenPos);
                 break;
             case 'N': // 予約語: NaN または識別子
                 addReservedWordOrIdentifier("NaN",
-                    json_token_detail::NumVal{std::numeric_limits<double>::quiet_NaN()});
+                    json_token_detail::NumVal{std::numeric_limits<double>::quiet_NaN()}, tokenPos);
                 break;
             default:
                 // その他の文字：識別子として処理（英字、$、_で始まる）
                 // parseIdentifierが英字・$・_以外の場合は例外を投げる
-                addStringOrKey(parseIdentifier());
+                addStringOrKey(parseIdentifier(), tokenPos);
                 break;
         }
         return true;
@@ -770,12 +771,13 @@ private:
     // @tparam N 予約語の長さ
     // @param reservedWord 予約語文字列
     // @param valueToken 予約語が値の場合のトークン
-    template <std::size_t N>
-    void addReservedWordOrIdentifier(const char (&reservedWord)[N], JsonToken valueToken) {
+    template <std::size_t N, typename TokenT>
+    void addReservedWordOrIdentifier(const char (&reservedWord)[N], TokenT valueToken,
+                                     std::size_t tokenPos) {
         if (matchReservedWord(reservedWord)) {
-            addReservedWordOrKey(reservedWord, std::move(valueToken));
+            addReservedWordOrKey(reservedWord, std::move(valueToken), tokenPos);
         } else {
-            addStringOrKey(parseIdentifier());
+            addStringOrKey(parseIdentifier(), tokenPos);
         }
     }
 
@@ -805,12 +807,13 @@ private:
     // @brief 予約語をキーか値として追加
     // @param word 予約語の文字列
     // @param valueToken 値としてのトークン
-    void addReservedWordOrKey(const char* word, JsonToken valueToken) {
+    template <typename TokenT>
+    void addReservedWordOrKey(const char* word, TokenT valueToken, std::size_t tokenPos) {
         skipWhitespaceAndComments();
         if (peek() == ':') {
-            tokenManager_.pushToken(json_token_detail::KeyVal{word});
+            emitToken(json_token_detail::KeyVal{word}, tokenPos);
         } else {
-            tokenManager_.pushToken(std::move(valueToken));
+            emitToken(std::move(valueToken), tokenPos);
             validateAfterValue();
         }
     }
@@ -818,12 +821,12 @@ private:
     // @brief 識別子または文字列をキーか値として追加
     // @note 処理速度低下を避けるためaddReservedWordOrKeyとの共通化しない。
     // @param text 識別子または文字列
-    void addStringOrKey(std::string text) {
+    void addStringOrKey(std::string text, std::size_t tokenPos) {
         skipWhitespaceAndComments();
         if (peek() == ':') {
-            tokenManager_.pushToken(json_token_detail::KeyVal{std::move(text)});
+            emitToken(json_token_detail::KeyVal{std::move(text)}, tokenPos);
         } else {
-            tokenManager_.pushToken(json_token_detail::StrVal{std::move(text)});
+            emitToken(json_token_detail::StrVal{std::move(text)}, tokenPos);
             validateAfterValue();
         }
     }
@@ -837,6 +840,11 @@ private:
             throw std::runtime_error(
                 std::string("JSON5: unexpected character '") + c + "' after value");
         }
+    }
+
+    template <typename TokenT>
+    void emitToken(TokenT&& tokenValue, std::size_t position) {
+        tokenManager_.pushToken(JsonToken{std::forward<TokenT>(tokenValue), position});
     }
 
     // ******************************************************************************** 構築

@@ -34,7 +34,7 @@ private:
 
     // 次のトークンを取得（消費しない）
     // @note generateAllTokens()で必ずEndOfStreamTagが追加されるため、トークンは常に存在する
-    JsonToken peekToken() const { return tokenManager_.peek(); }
+    const JsonToken& peekToken() const { return tokenManager_.peek(); }
 
     // ******************************************************************************** 構築
 public:
@@ -47,59 +47,59 @@ public:
     // 構造トークン
     void startObject() {
         auto t = take();
-        if (!std::holds_alternative<json_token_detail::StartObjectTag>(t))
+        if (!std::holds_alternative<json_token_detail::StartObjectTag>(t.value))
             typeError("object start '{'");
     }
 
     void endObject() {
         auto t = take();
-        if (!std::holds_alternative<json_token_detail::EndObjectTag>(t))
+        if (!std::holds_alternative<json_token_detail::EndObjectTag>(t.value))
             typeError("object end '}'");
     }
 
     void startArray() {
         auto t = take();
-        if (!std::holds_alternative<json_token_detail::StartArrayTag>(t))
+        if (!std::holds_alternative<json_token_detail::StartArrayTag>(t.value))
             typeError("array start '['");
     }
 
     void endArray() {
         auto t = take();
-        if (!std::holds_alternative<json_token_detail::EndArrayTag>(t))
+        if (!std::holds_alternative<json_token_detail::EndArrayTag>(t.value))
             typeError("array end ']'");
     }
 
     // 次が EndArray / EndObject か確認（消費しない）
     // @note peekToken()は常に成功する（EndOfStreamTagが保証されている）
     bool nextIsEndArray() {
-        return std::holds_alternative<json_token_detail::EndArrayTag>(peekToken());
+        return std::holds_alternative<json_token_detail::EndArrayTag>(peekToken().value);
     }
 
     bool nextIsEndObject() {
-        return std::holds_alternative<json_token_detail::EndObjectTag>(peekToken());
+        return std::holds_alternative<json_token_detail::EndObjectTag>(peekToken().value);
     }
 
     // 次がnullならtrueを返す。それ以外のトークンならfalseを返す。
     // @note peekToken()は常に成功する（EndOfStreamTagが保証されている）
     bool nextIsNull() {
-        return std::holds_alternative<json_token_detail::NullTag>(peekToken());
+        return std::holds_alternative<json_token_detail::NullTag>(peekToken().value);
     }
 
     // キー
     std::string nextKey() {
         auto t = take();
-        if (!std::holds_alternative<json_token_detail::KeyVal>(t))
+        if (!std::holds_alternative<json_token_detail::KeyVal>(t.value))
             typeError("object key");
-        return std::get<json_token_detail::KeyVal>(t).v;
+        return std::get<json_token_detail::KeyVal>(t.value).v;
     }
 
     void expectKey(const char* expected) {
         auto t = take();
-        if (!std::holds_alternative<json_token_detail::KeyVal>(t))
+        if (!std::holds_alternative<json_token_detail::KeyVal>(t.value))
             typeError("object key");
-        if (std::get<json_token_detail::KeyVal>(t).v != expected) {
+        if (std::get<json_token_detail::KeyVal>(t.value).v != expected) {
             throw std::runtime_error(
-                std::string("JsonParser: unexpected key '") + std::get<json_token_detail::KeyVal>(t).v + "', expected '" +
+                std::string("JsonParser: unexpected key '") + std::get<json_token_detail::KeyVal>(t.value).v + "', expected '" +
                 std::string(expected) + "'");
         }
     }
@@ -107,8 +107,8 @@ public:
     // 値読み取り
     void readTo(bool& out) {
         auto t = take();
-        if (std::holds_alternative<json_token_detail::BoolVal>(t)) {
-            out = static_cast<bool>(std::get<json_token_detail::BoolVal>(t).v);
+        if (std::holds_alternative<json_token_detail::BoolVal>(t.value)) {
+            out = static_cast<bool>(std::get<json_token_detail::BoolVal>(t.value).v);
         } else {
             typeError("bool");
         }
@@ -116,8 +116,8 @@ public:
 
     void readTo(int& out) {
         auto t = take();
-        if (std::holds_alternative<json_token_detail::IntVal>(t)) {
-            out = static_cast<int>(std::get<json_token_detail::IntVal>(t).v);
+        if (std::holds_alternative<json_token_detail::IntVal>(t.value)) {
+            out = static_cast<int>(std::get<json_token_detail::IntVal>(t.value).v);
         } else {
             typeError("int");
         }
@@ -125,12 +125,12 @@ public:
 
     void readTo(double& out) {
         auto t = take();
-        if (std::holds_alternative<json_token_detail::NumVal>(t)) {
-            out = std::get<json_token_detail::NumVal>(t).v;
+        if (std::holds_alternative<json_token_detail::NumVal>(t.value)) {
+            out = std::get<json_token_detail::NumVal>(t.value).v;
             return;
         }
-        if (std::holds_alternative<json_token_detail::IntVal>(t)) {
-            out = static_cast<double>(std::get<json_token_detail::IntVal>(t).v);
+        if (std::holds_alternative<json_token_detail::IntVal>(t.value)) {
+            out = static_cast<double>(std::get<json_token_detail::IntVal>(t.value).v);
             return;
         }
         typeError("number");
@@ -144,8 +144,8 @@ public:
 
     void readTo(std::string& out) {
         auto t = take();
-        if (std::holds_alternative<json_token_detail::StrVal>(t)) {
-            out = std::get<std::string>(t);
+        if (std::holds_alternative<json_token_detail::StrVal>(t.value)) {
+            out = std::get<std::string>(t.value);
             return;
         }
         typeError("string");
@@ -155,15 +155,15 @@ public:
     void skipValue() {
         auto t = take();
         // プリミティブ/Null/文字列/数値/真偽は1トークンで完結
-        if (std::holds_alternative<json_token_detail::NullTag>(t) ||
-            std::holds_alternative<json_token_detail::BoolVal>(t) ||
-            std::holds_alternative<json_token_detail::IntVal>(t) ||
-            std::holds_alternative<json_token_detail::NumVal>(t) ||
-            std::holds_alternative<json_token_detail::StrVal>(t)) {
+        if (std::holds_alternative<json_token_detail::NullTag>(t.value) ||
+            std::holds_alternative<json_token_detail::BoolVal>(t.value) ||
+            std::holds_alternative<json_token_detail::IntVal>(t.value) ||
+            std::holds_alternative<json_token_detail::NumVal>(t.value) ||
+            std::holds_alternative<json_token_detail::StrVal>(t.value)) {
             return;
         }
         // オブジェクト: { key: value, ... }
-        if (std::holds_alternative<json_token_detail::StartObjectTag>(t)) {
+        if (std::holds_alternative<json_token_detail::StartObjectTag>(t.value)) {
             while (!nextIsEndObject()) {
                 (void)nextKey();  // キーを消費
                 skipValue();      // 対応する値をスキップ
@@ -172,7 +172,7 @@ public:
             return;
         }
         // 配列: [ v1, v2, ... ]
-        if (std::holds_alternative<json_token_detail::StartArrayTag>(t)) {
+        if (std::holds_alternative<json_token_detail::StartArrayTag>(t.value)) {
             while (!nextIsEndArray()) {
                 skipValue();
             }
@@ -180,10 +180,10 @@ public:
             return;
         }
         // 想定外（Endマーカー/Keyなど値位置では不正）
-        if (std::holds_alternative<json_token_detail::EndOfStreamTag>(t)) {
+        if (std::holds_alternative<json_token_detail::EndOfStreamTag>(t.value)) {
             typeError("value (got end-of-stream)");
         }
-        if (std::holds_alternative<json_token_detail::KeyVal>(t)) {
+        if (std::holds_alternative<json_token_detail::KeyVal>(t.value)) {
             typeError("value (got key)");
         }
     }

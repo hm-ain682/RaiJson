@@ -2,6 +2,7 @@
 // @brief JSONトークンの定義とトークン管理クラス
 
 module;
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <string>
@@ -9,6 +10,7 @@ module;
 #include <mutex>
 #include <condition_variable>
 #include <exception>
+#include <utility>
 
 export module rai.json.json_token_manager;
 
@@ -62,12 +64,31 @@ using StrVal = std::string;
 
 // @brief JSONトークンのvariant表現
 // @note 内部実装の詳細型はjson_token_detail名前空間に隠蔽されている
-using JsonToken =
+using JsonTokenValue =
     std::variant<json_token_detail::EndOfStreamTag, json_token_detail::NullTag,
                  json_token_detail::BoolVal, json_token_detail::IntVal, json_token_detail::NumVal,
                  json_token_detail::StrVal, json_token_detail::KeyVal,
                  json_token_detail::StartObjectTag, json_token_detail::EndObjectTag,
                  json_token_detail::StartArrayTag, json_token_detail::EndArrayTag>;
+
+// @brief JSONトークン（値と入力位置を保持）
+struct JsonToken {
+    JsonTokenValue value{};    ///< トークンの種類と値
+    std::size_t position{};    ///< 入力ストリーム内での開始位置
+
+    JsonToken() = default;
+    JsonToken(const JsonToken&) = default;
+    JsonToken(JsonToken&&) = default;
+    JsonToken& operator=(const JsonToken&) = default;
+    JsonToken& operator=(JsonToken&&) = default;
+
+    JsonToken(JsonTokenValue v, std::size_t pos)
+        : value(std::move(v)), position(pos) {}
+
+    template <typename T>
+    JsonToken(T&& v, std::size_t pos)
+        : value(std::forward<T>(v)), position(pos) {}
+};
 
 // ******************************************************************************** デフォルトのトークン管理クラス
 // @brief dequeを使用したトークン管理クラス
