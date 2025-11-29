@@ -71,7 +71,7 @@ concept HasFromJson = requires(const Field& field, const std::string& str) {
 template <typename Field>
 concept IsPolymorphicField = requires(const Field& field) {
     typename Field::BaseType;
-    { field.getTypeName(std::declval<const typename Field::BaseType*>()) } -> std::convertible_to<std::string>;
+    { field.getTypeName(std::declval<const typename Field::BaseType&>()) } -> std::convertible_to<std::string>;
     { field.findEntry(std::string_view{}) };
 };
 
@@ -134,51 +134,59 @@ export using IJsonFieldSet = JsonFieldSetBase<ActiveJsonParser>;
 
 /// @brief JSONフィールドの基本定義。
 /// @tparam MemberPtr メンバー変数へのポインタ。
-export template <auto MemberPtr>
+export template <typename MemberPtrType>
 struct JsonField {
-    static_assert(std::is_member_object_pointer_v<decltype(MemberPtr)>, "JsonField requires a data member pointer");
-    using Traits = MemberPointerTraits<decltype(MemberPtr)>;
+    static_assert(std::is_member_object_pointer_v<MemberPtrType>, "JsonField requires a data member pointer");
+    using Traits = MemberPointerTraits<MemberPtrType>;
     using OwnerType = typename Traits::OwnerType;
     using ValueType = typename Traits::ValueType;
-    inline static constexpr auto member = MemberPtr;
+    MemberPtrType member{}; // pointer-to-member stored at runtime
     const char* key{};
     bool required{false};
 
-    constexpr explicit JsonField(const char* keyName, bool req = false) : key(keyName), required(req) {}
+    constexpr explicit JsonField(MemberPtrType memberPtr, const char* keyName, bool req = false)
+        : member(memberPtr), key(keyName), required(req) {}
 };
 
 /// @brief Enum型のフィールド用に特化したJsonField派生クラス。
 /// @tparam MemberPtr Enumメンバー変数へのポインタ。
 /// @tparam Entries Enumと文字列のマッピング配列への参照。
-export template <auto MemberPtr, const auto& Entries>
-struct JsonEnumField : JsonField<MemberPtr> {
-    using Base = JsonField<MemberPtr>;
+export template <typename MemberPtrType>
+struct JsonEnumField : JsonField<MemberPtrType> {
+    using Base = JsonField<MemberPtrType>;
     using typename Base::ValueType;
     static_assert(std::is_enum_v<ValueType>, "JsonEnumField requires enum type");
 
-    // エントリ数を配列サイズから自動推論
-    static constexpr std::size_t N = std::extent_v<std::remove_reference_t<decltype(Entries)>>;
+    // 実行時に渡されるエントリ配列への参照とサイズ
+    const EnumEntry<ValueType>* entriesPtr_{nullptr};
+    std::size_t entriesCount_{0};
 
-    /// @brief EnumConverterインスタンス。
-    /// @note 各JsonEnumFieldインスタンスがコンバータを保持する。
-    EnumConverter<ValueType, N> converter_{Entries};
+    /// @brief Enum用フィールドのコンストラクタ（エントリ配列を受け取る）
+    /// @param memberPtr ポインタメンバ
+    /// @param keyName JSONキー名
+    /// @param entries エントリ配列
+    template <std::size_t N>
+    constexpr explicit JsonEnumField(MemberPtrType memberPtr, const char* keyName, const EnumEntry<ValueType> (&entries)[N], bool req = false)
+        : Base(memberPtr, keyName, req), entriesPtr_(entries), entriesCount_(N) {}
 
-    /// @brief Enum用フィールドのコンストラクタ。
-    /// @param keyName JSONキー名。
-    /// @param req 必須フィールドかどうか。
-    constexpr explicit JsonEnumField(const char* keyName, bool req = false)
-        : Base(keyName, req) {}
+    /// @brief コンストラクタ互換（エントリ無し）
+    constexpr explicit JsonEnumField(MemberPtrType memberPtr, const char* keyName, bool req = false)
+        : Base(memberPtr, keyName, req) {}
 
     /// @brief Enum値を文字列に変換する。
     /// @param value 変換対象のenum値。
     /// @return JSON文字列。見つからない場合は例外を投げる。
     /// @note EnumConverterを使用して変換する。
     std::string toJson(const ValueType& value) const {
-        auto result = converter_.toString(value);
-        if (!result) {
-            throw std::runtime_error("Failed to convert enum to string");
+        if (!entriesPtr_ || entriesCount_ == 0) {
+            throw std::runtime_error("Enum entries not initialized");
         }
-        return std::string(*result);
+        for (std::size_t i = 0; i < entriesCount_; ++i) {
+            if (entriesPtr_[i].value == value) {
+                return std::string(entriesPtr_[i].name);
+            }
+        }
+        throw std::runtime_error("Failed to convert enum to string");
     }
 
     /// @brief 文字列からEnum値に変換する。
@@ -186,11 +194,15 @@ struct JsonEnumField : JsonField<MemberPtr> {
     /// @return 変換されたenum値。見つからない場合は例外を投げる。
     /// @note EnumConverterを使用して高速検索する。
     ValueType fromJson(const std::string& jsonValue) const {
-        auto result = converter_.fromString(jsonValue);
-        if (!result) {
-            throw std::runtime_error(std::string("Failed to convert string to enum: ") + jsonValue);
+        if (!entriesPtr_ || entriesCount_ == 0) {
+            throw std::runtime_error("Enum entries not initialized");
         }
-        return *result;
+        for (std::size_t i = 0; i < entriesCount_; ++i) {
+            if (jsonValue == entriesPtr_[i].name) {
+                return entriesPtr_[i].value;
+            }
+        }
+        throw std::runtime_error(std::string("Failed to convert string to enum: ") + jsonValue);
     }
 };
 
@@ -205,9 +217,9 @@ struct PolymorphicTypeEntry {
 /// @brief ポリモーフィック型（unique_ptr<基底クラス>）用のJsonField派生クラス。
 /// @tparam MemberPtr unique_ptr<基底クラス>メンバー変数へのポインタ。
 /// @tparam Entries 型名とファクトリ関数のマッピング配列への参照。
-export template <auto MemberPtr>
-struct JsonPolymorphicField : JsonField<MemberPtr> {
-    using Base = JsonField<MemberPtr>;
+export template <typename MemberPtrType>
+struct JsonPolymorphicField : JsonField<MemberPtrType> {
+    using Base = JsonField<MemberPtrType>;
     using typename Base::ValueType;
 
     // ValueTypeはstd::unique_ptr<T>であることを確認
@@ -223,16 +235,15 @@ struct JsonPolymorphicField : JsonField<MemberPtr> {
     /// @brief ポリモーフィック型用フィールドのコンストラクタ。
     /// @param keyName JSONキー名。
     /// @param req 必須フィールドかどうか。
-    // コンストラクタ: 書式は (keyName, entriesArray, req=false)
+    // コンストラクタ: 書式は (memberPtr, keyName, entriesArray, req=false)
     template <std::size_t N>
-    constexpr explicit JsonPolymorphicField(const char* keyName, const PolymorphicTypeEntry<BaseType> (&entries)[N], bool req = false)
-        : Base(keyName, req), entriesPtr_(entries), entriesCount_(N) {}
+    constexpr explicit JsonPolymorphicField(MemberPtrType memberPtr, const char* keyName, const PolymorphicTypeEntry<BaseType> (&entries)[N], bool req = false)
+        : Base(memberPtr, keyName, req), entriesPtr_(entries), entriesCount_(N) {}
 
     /// @brief 型名から対応するエントリを検索する。
     /// @param typeName 検索する型名。
     /// @return 見つかった場合はエントリへのポインタ、見つからない場合はnullptr。
     const PolymorphicTypeEntry<BaseType>* findEntry(std::string_view typeName) const {
-        if (!entriesPtr_ || entriesCount_ == 0) return nullptr;
         for (std::size_t i = 0; i < entriesCount_; ++i) {
             if (entriesPtr_[i].typeName == typeName) {
                 return &entriesPtr_[i];
@@ -254,6 +265,47 @@ struct JsonPolymorphicField : JsonField<MemberPtr> {
         throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeid(obj).name());
     }
 
+};
+
+/// @brief ポリモーフィックな配列（vector<std::unique_ptr<BaseType>>）用のフィールド。
+export template <typename MemberPtrType>
+struct JsonPolymorphicArrayField : JsonField<MemberPtrType> {
+    using Base = JsonField<MemberPtrType>;
+    using typename Base::ValueType;
+
+    // ValueType は std::vector<std::unique_ptr<T>> であることを確認するユーティリティ
+    template <typename X>
+    struct is_vector_of_unique_ptr : std::false_type {};
+
+    template <typename U>
+    struct is_vector_of_unique_ptr<std::vector<std::unique_ptr<U>>> : std::true_type {};
+
+    static_assert(is_vector_of_unique_ptr<ValueType>::value, "JsonPolymorphicArrayField requires std::vector<std::unique_ptr<T>> type");
+
+    using ElementUniquePtr = typename ValueType::value_type; // std::unique_ptr<T>
+    using BaseType = typename ElementUniquePtr::element_type;
+
+    const PolymorphicTypeEntry<BaseType>* entriesPtr_{nullptr};
+    std::size_t entriesCount_{0};
+
+    template <std::size_t N>
+    constexpr explicit JsonPolymorphicArrayField(MemberPtrType memberPtr, const char* keyName, const PolymorphicTypeEntry<BaseType> (&entries)[N], bool req = false)
+        : Base(memberPtr, keyName, req), entriesPtr_(entries), entriesCount_(N) {}
+
+    const PolymorphicTypeEntry<BaseType>* findEntry(std::string_view typeName) const {
+        for (std::size_t i = 0; i < entriesCount_; ++i) {
+            if (entriesPtr_[i].typeName == typeName) return &entriesPtr_[i];
+        }
+        return nullptr;
+    }
+
+    std::string getTypeName(const BaseType& obj) const {
+        for (std::size_t i = 0; i < entriesCount_; ++i) {
+            auto testObj = entriesPtr_[i].factory();
+            if (typeid(obj) == typeid(*testObj)) return entriesPtr_[i].typeName;
+        }
+        throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeid(obj).name());
+    }
 };
 
 // ******************************************************************************** フィールドセット
@@ -378,6 +430,28 @@ private:
         fields.writeFieldsOnly(writer, ptr.get());
 
         writer.endObject();
+    }
+
+    // ポリモーフィック型配列（vector<std::unique_ptr<T>>）の書き出し
+    template <typename FieldType, HasJsonFields T>
+    void writePolymorphicObject(JsonWriter& writer, const FieldType& field, const std::vector<std::unique_ptr<T>>& vec) const {
+        writer.startArray();
+        for (const auto& ptr : vec) {
+            if (!ptr) {
+                writer.null();
+                continue;
+            }
+            writer.startObject();
+            std::string typeName = field.getTypeName(*ptr);
+            writer.key("type");
+            writer.writeObject(typeName);
+
+            auto& fields = ptr->jsonFields();
+            fields.writeFieldsOnly(writer, ptr.get());
+
+            writer.endObject();
+        }
+        writer.endArray();
     }
 
     // variant型の処理
@@ -536,6 +610,54 @@ private:
 
         parser.endObject();
         out = std::move(tmp);
+    }
+
+    // ポリモーフィック型配列（vector<std::unique_ptr<T>>）の読み込み
+    template <typename FieldType, typename T>
+    void readPolymorphicObject(Parser& parser, const FieldType& field, std::vector<std::unique_ptr<T>>& out) const {
+        // null は配列そのものが null の場合の扱いは上位ハンドラに任せる。
+        parser.startArray();
+        out.clear();
+        while (!parser.nextIsEndArray()) {
+            if (parser.nextIsNull()) {
+                parser.skipValue();
+                out.push_back(nullptr);
+                continue;
+            }
+
+            parser.startObject();
+
+            // type キー読み取り
+            std::string typeKey = parser.nextKey();
+            if (typeKey != "type") {
+                throw std::runtime_error(std::string("Expected 'type' key for polymorphic object, got '") + typeKey + "'");
+            }
+
+            std::string typeName;
+            parser.readTo(typeName);
+
+            const auto* entry = field.findEntry(typeName);
+            if (!entry) {
+                throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeName);
+            }
+
+            auto tmp = entry->factory();
+
+            if constexpr (HasJsonFields<T>) {
+                auto& fields = tmp->jsonFields();
+                readObjectFieldsByFieldSet(parser, fields, tmp.get());
+            } else {
+                while (!parser.nextIsEndObject()) {
+                    std::string k = parser.nextKey();
+                    parser.noteUnknownKey(k);
+                    parser.skipValue();
+                }
+            }
+
+            parser.endObject();
+            out.push_back(std::move(tmp));
+        }
+        parser.endArray();
     }
 
     /// @brief BaseTypeを使用してオブジェクトのフィールドを読み込む（startObject/endObject済み）。

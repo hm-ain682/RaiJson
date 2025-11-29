@@ -43,10 +43,10 @@ struct SimpleData {
 
     const IJsonFieldSet& jsonFields() const {
         static const auto fields = makeJsonFieldSet<SimpleData>(
-            JsonField<&SimpleData::id>{"id"},
-            JsonField<&SimpleData::value>{"value"},
-            JsonField<&SimpleData::flag>{"flag"},
-            JsonField<&SimpleData::name>{"name"}
+            JsonField(&SimpleData::id, "id"),
+            JsonField(&SimpleData::value, "value"),
+            JsonField(&SimpleData::flag, "flag"),
+            JsonField(&SimpleData::name, "name")
         );
         return fields;
     }
@@ -60,9 +60,9 @@ struct VectorData {
 
     const IJsonFieldSet& jsonFields() const {
         static const auto fields = makeJsonFieldSet<VectorData>(
-            JsonField<&VectorData::category>{"category"},
-            JsonField<&VectorData::numbers>{"numbers"},
-            JsonField<&VectorData::tags>{"tags"}
+            JsonField(&VectorData::category, "category"),
+            JsonField(&VectorData::numbers, "numbers"),
+            JsonField(&VectorData::tags, "tags")
         );
         return fields;
     }
@@ -77,8 +77,8 @@ struct BaseNode {
 
     virtual const IJsonFieldSet& jsonFields() const {
         static const auto fields = makeJsonFieldSet<BaseNode>(
-            JsonField<&BaseNode::type>{"type"},
-            JsonField<&BaseNode::nodeId>{"nodeId"}
+            JsonField(&BaseNode::type, "type"),
+            JsonField(&BaseNode::nodeId, "nodeId")
         );
         return fields;
     }
@@ -90,9 +90,9 @@ struct DataNode : public BaseNode {
 
     const IJsonFieldSet& jsonFields() const override {
         static const auto fields = makeJsonFieldSet<DataNode>(
-            JsonField<&BaseNode::type>{"type"},
-            JsonField<&BaseNode::nodeId>{"nodeId"},
-            JsonField<&DataNode::dataValue>{"dataValue"}
+            JsonField(&BaseNode::type, "type"),
+            JsonField(&BaseNode::nodeId, "nodeId"),
+            JsonField(&DataNode::dataValue, "dataValue")
         );
         return fields;
     }
@@ -104,9 +104,9 @@ struct ContainerNode : public BaseNode {
 
     const IJsonFieldSet& jsonFields() const override {
         static const auto fields = makeJsonFieldSet<ContainerNode>(
-            JsonField<&BaseNode::type>{"type"},
-            JsonField<&BaseNode::nodeId>{"nodeId"},
-            JsonField<&ContainerNode::children>{"children"}
+            JsonField(&BaseNode::type, "type"),
+            JsonField(&BaseNode::nodeId, "nodeId"),
+            JsonField(&ContainerNode::children, "children")
         );
         return fields;
     }
@@ -134,11 +134,11 @@ struct ComplexData {
 
     const IJsonFieldSet& jsonFields() const {
         static const auto fields = makeJsonFieldSet<ComplexData>(
-            JsonField<&ComplexData::name>{"name"},
-            JsonField<&ComplexData::level>{"level"},
-            JsonPolymorphicField<&ComplexData::node>{"node", baseNodeEntries},
-            JsonField<&ComplexData::items>{"items"},
-            JsonField<&ComplexData::collections>{"collections"}
+            JsonField(&ComplexData::name, "name"),
+            JsonField(&ComplexData::level, "level"),
+            JsonPolymorphicField(&ComplexData::node, "node", baseNodeEntries),
+            JsonField(&ComplexData::items, "items"),
+            JsonField(&ComplexData::collections, "collections")
         );
         return fields;
     }

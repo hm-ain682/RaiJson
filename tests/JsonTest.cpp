@@ -20,8 +20,8 @@ struct A {
     ///       makeJsonFieldSetを使用することで型名を簡潔に記述。
     virtual const IJsonFieldSet& jsonFields() const {
         static const auto fields = makeJsonFieldSet<A>(
-            JsonField<&A::w>{"w"},
-            JsonField<&A::x>{"x"}
+            JsonField(&A::w, "w"),
+            JsonField(&A::x, "x")
         );
         return fields;
     }
@@ -37,8 +37,8 @@ struct B : public A {
     ///       makeJsonFieldSetを使用することで型名を簡潔に記述。
     const IJsonFieldSet& jsonFields() const override {
         static const auto fields = makeJsonFieldSet<B>(
-            JsonField<&A::w>{"w"},
-            JsonField<&B::y>{"y"}
+            JsonField(&A::w, "w"),
+            JsonField(&B::y, "y")
         );
         return fields;
     }
@@ -54,8 +54,8 @@ struct C : public A {
     ///       makeJsonFieldSetを使用することで型名を簡潔に記述。
     const IJsonFieldSet& jsonFields() const override {
         static const auto fields = makeJsonFieldSet<C>(
-            JsonField<&A::w>{"w"},
-            JsonField<&C::z>{"z"}
+            JsonField(&A::w, "w"),
+            JsonField(&C::z, "z")
         );
         return fields;
     }
