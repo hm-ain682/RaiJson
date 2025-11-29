@@ -205,7 +205,7 @@ struct PolymorphicTypeEntry {
 /// @brief ポリモーフィック型（unique_ptr<基底クラス>）用のJsonField派生クラス。
 /// @tparam MemberPtr unique_ptr<基底クラス>メンバー変数へのポインタ。
 /// @tparam Entries 型名とファクトリ関数のマッピング配列への参照。
-export template <auto MemberPtr, const auto& Entries>
+export template <auto MemberPtr>
 struct JsonPolymorphicField : JsonField<MemberPtr> {
     using Base = JsonField<MemberPtr>;
     using typename Base::ValueType;
@@ -216,41 +216,42 @@ struct JsonPolymorphicField : JsonField<MemberPtr> {
 
     using BaseType = typename ValueType::element_type;
 
-    // エントリ数を配列サイズから自動推論
-    static constexpr std::size_t N = std::extent_v<std::remove_reference_t<decltype(Entries)>>;
+    // 実行時に渡されるエントリ配列への参照とサイズ
+    const PolymorphicTypeEntry<BaseType>* entriesPtr_{nullptr};
+    std::size_t entriesCount_{0};
 
     /// @brief ポリモーフィック型用フィールドのコンストラクタ。
     /// @param keyName JSONキー名。
     /// @param req 必須フィールドかどうか。
-    constexpr explicit JsonPolymorphicField(const char* keyName, bool req = false)
-        : Base(keyName, req) {}
+    // コンストラクタ: 書式は (keyName, entriesArray, req=false)
+    template <std::size_t N>
+    constexpr explicit JsonPolymorphicField(const char* keyName, const PolymorphicTypeEntry<BaseType> (&entries)[N], bool req = false)
+        : Base(keyName, req), entriesPtr_(entries), entriesCount_(N) {}
 
     /// @brief 型名から対応するエントリを検索する。
     /// @param typeName 検索する型名。
     /// @return 見つかった場合はエントリへのポインタ、見つからない場合はnullptr。
     const PolymorphicTypeEntry<BaseType>* findEntry(std::string_view typeName) const {
-        for (std::size_t i = 0; i < N; ++i) {
-            if (Entries[i].typeName == typeName) {
-                return &Entries[i];
+        if (!entriesPtr_ || entriesCount_ == 0) return nullptr;
+        for (std::size_t i = 0; i < entriesCount_; ++i) {
+            if (entriesPtr_[i].typeName == typeName) {
+                return &entriesPtr_[i];
             }
         }
         return nullptr;
     }
 
     /// @brief オブジェクトから型名を取得する。
-    /// @param obj 対象オブジェクトへのポインタ。
+    /// @param obj 対象オブジェクト。
     /// @return 型名。見つからない場合は例外を投げる。
-    std::string getTypeName(const BaseType* obj) const {
-        if (!obj) {
-            throw std::runtime_error("Cannot get type name from null pointer");
-        }
-        for (std::size_t i = 0; i < N; ++i) {
-            auto testObj = Entries[i].factory();
-            if (typeid(*obj) == typeid(*testObj)) {
-                return Entries[i].typeName;
+    std::string getTypeName(const BaseType& obj) const {
+        for (std::size_t i = 0; i < entriesCount_; ++i) {
+            auto testObj = entriesPtr_[i].factory();
+            if (typeid(obj) == typeid(*testObj)) {
+                return entriesPtr_[i].typeName;
             }
         }
-        throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeid(*obj).name());
+        throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeid(obj).name());
     }
 
 };
@@ -368,7 +369,7 @@ private:
         writer.startObject();
 
         // 型名を取得して書き出す
-        std::string typeName = field.getTypeName(ptr.get());
+        std::string typeName = field.getTypeName(*ptr);
         writer.key("type");
         writer.writeObject(typeName);
 

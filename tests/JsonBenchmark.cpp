@@ -1,5 +1,5 @@
 ﻿// @file JsonBenchmark.cpp
-// @brief JSON繝代・繧ｵ繝ｼ縺ｮ繝代ヵ繧ｩ繝ｼ繝槭Φ繧ｹ險域ｸｬ
+// @brief JSONパーサーのパフォーマンス計測
 
 import rai.json.json_writer;
 import rai.json.json_parser;
@@ -23,7 +23,7 @@ import rai.json.reading_ahead_buffer;
 using namespace rai::json;
 
 // ********************************************************************************
-// 繝昴Μ繝｢繝ｼ繝輔ぅ繝・け蝙九・逋ｻ骭ｲ・亥燕譁ｹ螳｣險・・
+// ポリモーフィック型の登録（前方宣言）
 // ********************************************************************************
 
 struct BaseNode;
@@ -31,10 +31,10 @@ struct DataNode;
 struct ContainerNode;
 
 // ********************************************************************************
-// 繝・せ繝育畑繝・・繧ｿ讒矩
+// テスト用データ構造
 // ********************************************************************************
 
-/// @brief 繝励Μ繝溘ユ繧｣繝門梛縺ｮ縺ｿ繧呈戟縺､蜊倡ｴ斐↑讒矩菴・
+/// @brief プリミティブ型のみを持つ単純な構造体
 struct SimpleData {
     int id = 0;
     double value = 0.0;
@@ -52,7 +52,7 @@ struct SimpleData {
     }
 };
 
-/// @brief 繝吶け繧ｿ繝ｼ繧貞性繧讒矩菴・
+/// @brief ベクターを含む構造体
 struct VectorData {
     std::string category;
     std::vector<int> numbers;
@@ -68,7 +68,7 @@ struct VectorData {
     }
 };
 
-/// @brief 繝昴Μ繝｢繝ｼ繝輔ぅ繝・け蝙九・蝓ｺ蠎輔け繝ｩ繧ｹ
+/// @brief ポリモーフィック型の基底クラス
 struct BaseNode {
     std::string type;
     int nodeId = 0;
@@ -84,7 +84,7 @@ struct BaseNode {
     }
 };
 
-/// @brief 繝昴Μ繝｢繝ｼ繝輔ぅ繝・け蝙九・豢ｾ逕溘け繝ｩ繧ｹ1
+/// @brief ポリモーフィック型の派生クラス1
 struct DataNode : public BaseNode {
     double dataValue = 0.0;
 
@@ -98,7 +98,7 @@ struct DataNode : public BaseNode {
     }
 };
 
-/// @brief 繝昴Μ繝｢繝ｼ繝輔ぅ繝・け蝙九・豢ｾ逕溘け繝ｩ繧ｹ2
+/// @brief ポリモーフィック型の派生クラス2
 struct ContainerNode : public BaseNode {
     std::vector<std::string> children;
 
@@ -112,19 +112,19 @@ struct ContainerNode : public BaseNode {
     }
 };
 
-// ComplexData讒矩菴薙・蠕後〒螳夂ｾｩ・医・繝ｪ繝｢繝ｼ繝輔ぅ繝・け繧ｨ繝ｳ繝医Μ縺ｮ蠕鯉ｼ・
+// ComplexData構造体は後で定義（ポリモーフィックエントリの後）
 
 // ********************************************************************************
-// 繝昴Μ繝｢繝ｼ繝輔ぅ繝・け蝙九・繝・ぅ繧ｹ繝代ャ繝∫匳骭ｲ
+// ポリモーフィック型のディスパッチ登録
 // ********************************************************************************
 
-// 繝昴Μ繝｢繝ｼ繝輔ぅ繝・け蝙九・繧ｨ繝ｳ繝医Μ螳夂ｾｩ
+// ポリモーフィック型のエントリ定義
 constexpr PolymorphicTypeEntry<BaseNode> baseNodeEntries[] = {
     {"DataNode", []() -> std::unique_ptr<BaseNode> { return std::make_unique<DataNode>(); }},
     {"ContainerNode", []() -> std::unique_ptr<BaseNode> { return std::make_unique<ContainerNode>(); }}
 };
 
-// ComplexData讒矩菴薙ｒ蜀榊ｮ夂ｾｩ・医・繝ｪ繝｢繝ｼ繝輔ぅ繝・け繝輔ぅ繝ｼ繝ｫ繝峨ｒ菴ｿ逕ｨ・・
+// ComplexData構造体を再定義（ポリモーフィックフィールドを使用）
 struct ComplexData {
     std::string name;
     int level = 0;
@@ -136,7 +136,7 @@ struct ComplexData {
         static const auto fields = makeJsonFieldSet<ComplexData>(
             JsonField<&ComplexData::name>{"name"},
             JsonField<&ComplexData::level>{"level"},
-            JsonPolymorphicField<&ComplexData::node, baseNodeEntries>{"node"},
+            JsonPolymorphicField<&ComplexData::node>{"node", baseNodeEntries},
             JsonField<&ComplexData::items>{"items"},
             JsonField<&ComplexData::collections>{"collections"}
         );
@@ -145,10 +145,10 @@ struct ComplexData {
 };
 
 // ********************************************************************************
-// 繝・せ繝医ョ繝ｼ繧ｿ逕滓・
+// テストデータ生成
 // ********************************************************************************
 
-/// @brief 蟆剰ｦ乗ｨ｡繝・・繧ｿ逕滓・・域焚KB遞句ｺｦ・・
+/// @brief 小規模データ生成（数KB程度）
 std::string generateSmallJsonData() {
     std::ostringstream oss;
     oss << "{\n";
@@ -161,7 +161,7 @@ std::string generateSmallJsonData() {
     oss << "  },\n";
     oss << "  \"items\": [\n";
 
-    // 10蛟九・繧｢繧､繝・Β繧堤函謌・
+    // 10個のアイテムを生成
     for (int i = 0; i < 10; ++i) {
         oss << "    {\n";
         oss << "      \"id\": " << i << ",\n";
@@ -174,7 +174,7 @@ std::string generateSmallJsonData() {
     oss << "  ],\n";
     oss << "  \"collections\": [\n";
 
-    // 5蛟九・繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ繧堤函謌・
+    // 5個のコレクションを生成
     for (int i = 0; i < 5; ++i) {
         oss << "    {\n";
         oss << "      \"category\": \"Category" << i << "\",\n";
@@ -197,7 +197,7 @@ std::string generateSmallJsonData() {
     return oss.str();
 }
 
-/// @brief 荳ｭ隕乗ｨ｡繝・・繧ｿ逕滓・・域焚逋ｾKB遞句ｺｦ・・
+/// @brief 中規模データ生成（数百KB程度）
 std::string generateMediumJsonData() {
     std::ostringstream oss;
     oss << "{\n";
@@ -208,7 +208,7 @@ std::string generateMediumJsonData() {
     oss << "    \"nodeId\": 200,\n";
     oss << "    \"children\": [";
 
-    // 100蛟九・蟄舌ヮ繝ｼ繝牙錐繧堤函謌・
+    // 100個の子ノード名を生成
     for (int i = 0; i < 100; ++i) {
         oss << "\"child_" << i << "\"" << (i < 99 ? ", " : "");
     }
@@ -216,7 +216,7 @@ std::string generateMediumJsonData() {
     oss << "  },\n";
     oss << "  \"items\": [\n";
 
-    // 1000蛟九・繧｢繧､繝・Β繧堤函謌・
+    // 1000個のアイテムを生成
     for (int i = 0; i < 1000; ++i) {
         oss << "    {\n";
         oss << "      \"id\": " << i << ",\n";
@@ -229,7 +229,7 @@ std::string generateMediumJsonData() {
     oss << "  ],\n";
     oss << "  \"collections\": [\n";
 
-    // 200蛟九・繧ｳ繝ｬ繧ｯ繧ｷ繝ｧ繝ｳ繧堤函謌・
+    // 200個のコレクションを生成
     for (int i = 0; i < 200; ++i) {
         oss << "    {\n";
         oss << "      \"category\": \"Category_" << i << "\",\n";
@@ -253,15 +253,15 @@ std::string generateMediumJsonData() {
 }
 
 // ********************************************************************************
-// 險域ｸｬ繝倥Ν繝代・髢｢謨ｰ
+// 計測ヘルパー関数
 // ********************************************************************************
 
-/// @brief 鬮倡ｲｾ蠎ｦ繧ｿ繧､繝槭・・医・繧､繧ｯ繝ｭ遘貞腰菴搾ｼ・
+/// @brief 高精度タイマー（マイクロ秒単位）
 class HighResolutionTimer {
 public:
     using Clock = std::chrono::high_resolution_clock;
     using TimePoint = std::chrono::time_point<Clock>;
-    using Duration = std::chrono::duration<double, std::micro>; // 繝槭う繧ｯ繝ｭ遘・
+    using Duration = std::chrono::duration<double, std::micro>; // マイクロ秒
 
     void start() {
         startTime_ = Clock::now();
@@ -280,7 +280,7 @@ private:
     TimePoint startTime_;
 };
 
-/// @brief 邨ｱ險域ュ蝣ｱ繧定ｨ育ｮ・
+/// @brief 統計情報を計算
 struct Statistics {
     double mean = 0.0;
     double min = 0.0;
@@ -293,14 +293,14 @@ struct Statistics {
             return stats;
         }
 
-        // 蟷ｳ蝮・､
+        // 平均値
         double sum = 0.0;
         for (double v : values) {
             sum += v;
         }
         stats.mean = sum / values.size();
 
-        // 譛蟆丞､繝ｻ譛螟ｧ蛟､
+        // 最小値・最大値
         stats.min = values[0];
         stats.max = values[0];
         for (double v : values) {
@@ -312,7 +312,7 @@ struct Statistics {
             }
         }
 
-        // 讓呎ｺ門￥蟾ｮ
+        // 標準偏差
         double variance = 0.0;
         for (double v : values) {
             double diff = v - stats.mean;
@@ -325,7 +325,7 @@ struct Statistics {
     }
 };
 
-/// @brief 繝吶Φ繝√・繝ｼ繧ｯ邨先棡縺ｮ蜃ｺ蜉・
+/// @brief ベンチマーク結果の出力
 void printBenchmarkResult(const std::string& name, const Statistics& stats) {
     std::cout << " [" << name << "] ";
     std::cout << "Mean: " << std::fixed << std::setprecision(3) << stats.mean << " us, ";
@@ -334,12 +334,12 @@ void printBenchmarkResult(const std::string& name, const Statistics& stats) {
     std::cout << "StdDev: " << stats.stddev << " us\n";
 }
 
-/// @brief 蜊倅ｸ繧ｹ繝ｬ繝・ラ縺ｧ繝輔ぃ繧､繝ｫ隱ｭ縺ｿ霎ｼ縺ｿ縺九ｉ繝代・繧ｹ縺ｾ縺ｧ繧定｡後≧縲・
-/// @param filename 蜈･蜉帙ヵ繧｡繧､繝ｫ蜷阪・
-/// @param out 隱ｭ縺ｿ霎ｼ縺ｿ邨先棡縺ｮ譬ｼ邏榊・縲・
-/// @param fileReadTime 繝輔ぃ繧､繝ｫ隱ｭ縺ｿ霎ｼ縺ｿ譎る俣(繝槭う繧ｯ繝ｭ遘・縲・
-/// @param parseTime 繝医・繧ｯ繝ｳ蛹匁凾髢・繝槭う繧ｯ繝ｭ遘・縲・
-/// @param buildTime 繧ｪ繝悶ず繧ｧ繧ｯ繝域ｧ狗ｯ画凾髢・繝槭う繧ｯ繝ｭ遘・縲・
+/// @brief 単一スレッドでファイル読み込みからパースまでを行う。
+/// @param filename 入力ファイル名。
+/// @param out 読み込み結果の格納先。
+/// @param fileReadTime ファイル読み込み時間(マイクロ秒)。
+/// @param parseTime トークン化時間(マイクロ秒)。
+/// @param buildTime オブジェクト構築時間(マイクロ秒)。
 static void runSequentialPipeline(
     const std::string& filename,
     ComplexData& out,
@@ -376,26 +376,26 @@ static void runSequentialPipeline(
     buildTime = timer.elapsedMicroseconds();
 }
 
-/// @brief 繧､繝ｳ繝｡繝｢繝ｪ繝吶Φ繝√・繝ｼ繧ｯ繧貞ｮ溯｡後☆繧九・
-/// @param jsonData 繝・せ繝育畑JSON譁・ｭ怜・縲・
-/// @param iterations 蜿榊ｾｩ蝗樊焚縲・
-/// @param warmupCount 繧ｦ繧ｩ繝ｼ繝繧｢繝・・蝗樊焚縲・
+/// @brief インメモリベンチマークを実行する。
+/// @param jsonData テスト用JSON文字列。
+/// @param iterations 反復回数。
+/// @param warmupCount ウォームアップ回数。
 static void runInMemoryBenchmark(const std::string& jsonData,
     int iterations, int warmupCount) {
     std::vector<double> readTimes, parseTimes, buildTimes, totalTimes;
 
-    // 繧ｦ繧ｩ繝ｼ繝繧｢繝・・
+    // ウォームアップ
     for (int i = 0; i < warmupCount; ++i) {
         ComplexData data;
         readJsonString(jsonData, data);
     }
 
-    // 螳滓ｸｬ螳・
+    // 実測定
     for (int i = 0; i < iterations; ++i) {
         HighResolutionTimer timer;
         ComplexData data;
 
-        // (1) 譁・ｭ怜・隱ｭ縺ｿ霎ｼ縺ｿ譎る俣
+        // (1) 文字列読み込み時間
         timer.start();
         std::istringstream stream(jsonData);
         std::ostringstream oss;
@@ -404,7 +404,7 @@ static void runInMemoryBenchmark(const std::string& jsonData,
         double readTime = timer.elapsedMicroseconds();
         readTimes.push_back(readTime);
 
-        // (2) 繝医・繧ｯ繝ｳ隗｣譫先凾髢・
+        // (2) トークン解析時間
         timer.start();
         std::vector<char> buffer(loadedData.begin(), loadedData.end());
         constexpr std::size_t aheadSize = 8;
@@ -418,7 +418,7 @@ static void runInMemoryBenchmark(const std::string& jsonData,
         double parseTime = timer.elapsedMicroseconds();
         parseTimes.push_back(parseTime);
 
-        // (3) 繧ｪ繝悶ず繧ｧ繧ｯ繝域ｧ狗ｯ画凾髢・
+        // (3) オブジェクト構築時間
         timer.start();
         JsonParser<JsonTokenManager> parser(tokenManager);
         readJsonObject(parser, data);
@@ -428,7 +428,7 @@ static void runInMemoryBenchmark(const std::string& jsonData,
         totalTimes.push_back(readTime + parseTime + buildTime);
     }
 
-    // 邨ｱ險医ｒ險育ｮ励＠縺ｦ蜃ｺ蜉・
+    // 統計を計算して出力
     std::cout << "Results:\n";
     printBenchmarkResult("(1) String Load    ", Statistics::compute(readTimes));
     printBenchmarkResult("(2) Token Parse    ", Statistics::compute(parseTimes));
@@ -437,18 +437,18 @@ static void runInMemoryBenchmark(const std::string& jsonData,
     std::cout << "\n";
 }
 
-/// @brief 繝輔ぃ繧､繝ｫI/O繝吶Φ繝√・繝ｼ繧ｯ繧貞ｮ溯｡後☆繧九・
-/// @param jsonData 繝・せ繝育畑JSON譁・ｭ怜・縲・
-/// @param filePrefix 繝輔ぃ繧､繝ｫ蜷阪・繝励Ξ繝輔ぅ繝・け繧ｹ縲・
-/// @param iterations 蜿榊ｾｩ蝗樊焚縲・
-/// @param warmupCount 繧ｦ繧ｩ繝ｼ繝繧｢繝・・蝗樊焚縲・
+/// @brief ファイルI/Oベンチマークを実行する。
+/// @param jsonData テスト用JSON文字列。
+/// @param filePrefix ファイル名のプレフィックス。
+/// @param iterations 反復回数。
+/// @param warmupCount ウォームアップ回数。
 static void runFileIOBenchmark(
     const std::string& jsonData, const std::string& filePrefix,
     int iterations, int warmupCount) {
     std::vector<double> fileReadTimes, parseTimes, buildTimes, totalTimes;
     std::vector<double> sequentialFileInputTimes, parallelTotalTimes;
 
-    // 蜈ｨ蜿榊ｾｩ蛻・・繝輔ぃ繧､繝ｫ繧剃ｺ句燕菴懈・
+    // 全反復分のファイルを事前作成
     std::vector<std::string> filenames;
     for (int i = 0; i < iterations; ++i) {
         std::string filename = filePrefix + std::to_string(i) + ".json";
@@ -458,7 +458,7 @@ static void runFileIOBenchmark(
         ofs.close();
     }
 
-    // 繧ｦ繧ｩ繝ｼ繝繧｢繝・・・域怙蛻昴・繝輔ぃ繧､繝ｫ縺ｮ縺ｿ・・
+    // ウォームアップ（最初のファイルのみ）
     for (int i = 0; i < warmupCount; ++i) {
         ComplexData data;
         double fr{}, pr{}, br{};
@@ -469,7 +469,7 @@ static void runFileIOBenchmark(
         readJsonFile(filenames[0], data);
     }
 
-    // 螳滓ｸｬ螳夲ｼ售equential Pipeline
+    // 実測定：Sequential Pipeline
     for (int i = 0; i < iterations; ++i) {
         ComplexData data;
         double fileReadTime{}, parseTime{}, buildTime{};
@@ -480,7 +480,7 @@ static void runFileIOBenchmark(
         totalTimes.push_back(fileReadTime + parseTime + buildTime);
     }
 
-    // 螳滓ｸｬ螳夲ｼ售equential
+    // 実測定：Sequential
     sequentialFileInputTimes.reserve(iterations);
     for (int i = 0; i < iterations; ++i) {
         ComplexData data;
@@ -490,7 +490,7 @@ static void runFileIOBenchmark(
         sequentialFileInputTimes.push_back(timer.elapsedMicroseconds());
     }
 
-    // 螳滓ｸｬ螳夲ｼ啀arallel
+    // 実測定：Parallel
     parallelTotalTimes.reserve(iterations);
     for (int i = 0; i < iterations; ++i) {
         ComplexData data;
@@ -500,7 +500,7 @@ static void runFileIOBenchmark(
         parallelTotalTimes.push_back(timer.elapsedMicroseconds());
     }
 
-    // 螳滓ｸｬ螳夲ｼ哂uto (蛻・ｊ譖ｿ縺育沿)
+    // 実測定：Auto (切り替え版)
     std::vector<double> autoTotalTimes;
     autoTotalTimes.reserve(iterations);
     for (int i = 0; i < iterations; ++i) {
@@ -511,12 +511,12 @@ static void runFileIOBenchmark(
         autoTotalTimes.push_back(timer.elapsedMicroseconds());
     }
 
-    // 繝・せ繝医ヵ繧｡繧､繝ｫ繧偵け繝ｪ繝ｼ繝ｳ繧｢繝・・
+    // テストファイルをクリーンアップ
     for (const auto& filename : filenames) {
         std::remove(filename.c_str());
     }
 
-    // 邨ｱ險医ｒ險育ｮ励＠縺ｦ蜃ｺ蜉・
+    // 統計を計算して出力
     std::cout << "Sequential Results:\n";
     printBenchmarkResult("(1) File Read   ", Statistics::compute(fileReadTimes));
     printBenchmarkResult("(2) Token Parse ", Statistics::compute(parseTimes));
@@ -535,10 +535,10 @@ static void runFileIOBenchmark(
 }
 
 // ********************************************************************************
-// 繝吶Φ繝√・繝ｼ繧ｯ繝・せ繝・
+// ベンチマークテスト
 // ********************************************************************************
 
-/// @brief 蟆剰ｦ乗ｨ｡繝・・繧ｿ縺ｮ繝吶Φ繝√・繝ｼ繧ｯ
+/// @brief 小規模データのベンチマーク
 TEST(JsonBenchmark, SmallDataPerformance) {
     const int iterations = 100;
     std::string jsonData = generateSmallJsonData();
@@ -548,7 +548,7 @@ TEST(JsonBenchmark, SmallDataPerformance) {
     runInMemoryBenchmark(jsonData, iterations, 10);
 }
 
-/// @brief 荳ｭ隕乗ｨ｡繝・・繧ｿ縺ｮ繝吶Φ繝√・繝ｼ繧ｯ
+/// @brief 中規模データのベンチマーク
 TEST(JsonBenchmark, MediumDataPerformance) {
     const int iterations = 50;
     std::string jsonData = generateMediumJsonData();
@@ -558,8 +558,8 @@ TEST(JsonBenchmark, MediumDataPerformance) {
     runInMemoryBenchmark(jsonData, iterations, 5);
 }
 
-/// @brief 繝輔ぃ繧､繝ｫI/O霎ｼ縺ｿ縺ｮ繝吶Φ繝√・繝ｼ繧ｯ・亥ｰ剰ｦ乗ｨ｡・・
-/// @note 繧ｭ繝｣繝・す繝･縺ｮ蠖ｱ髻ｿ繧呈賜髯､縺吶ｋ縺溘ａ縲∝推蜿榊ｾｩ縺ｧ逡ｰ縺ｪ繧九ヵ繧｡繧､繝ｫ繧剃ｽｿ逕ｨ
+/// @brief ファイルI/O込みのベンチマーク（小規模）
+/// @note キャッシュの影響を排除するため、各反復で異なるファイルを使用
 TEST(JsonBenchmark, SmallDataFileIO) {
     const int iterations = 50;
     std::string jsonData = generateSmallJsonData();
@@ -570,8 +570,8 @@ TEST(JsonBenchmark, SmallDataFileIO) {
     runFileIOBenchmark(jsonData, "benchmark_small_", iterations, 3);
 }
 
-/// @brief 繝輔ぃ繧､繝ｫI/O霎ｼ縺ｿ縺ｮ繝吶Φ繝√・繝ｼ繧ｯ・井ｸｭ隕乗ｨ｡・・
-/// @note 繧ｭ繝｣繝・す繝･縺ｮ蠖ｱ髻ｿ繧呈賜髯､縺吶ｋ縺溘ａ縲∝推蜿榊ｾｩ縺ｧ逡ｰ縺ｪ繧九ヵ繧｡繧､繝ｫ繧剃ｽｿ逕ｨ
+/// @brief ファイルI/O込みのベンチマーク（中規模）
+/// @note キャッシュの影響を排除するため、各反復で異なるファイルを使用
 TEST(JsonBenchmark, MediumDataFileIO) {
     const int iterations = 30;
     std::string jsonData = generateMediumJsonData();
