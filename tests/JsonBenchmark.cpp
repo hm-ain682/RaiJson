@@ -371,7 +371,7 @@ static void runSequentialPipeline(
     parseTime = timer.elapsedMicroseconds();
 
     timer.start();
-    JsonParser<JsonTokenManager> parser(tokenManager);
+    JsonParser parser(tokenManager);
     readJsonObject(parser, out);
     buildTime = timer.elapsedMicroseconds();
 }
@@ -420,7 +420,7 @@ static void runInMemoryBenchmark(const std::string& jsonData,
 
         // (3) オブジェクト構築時間
         timer.start();
-        JsonParser<JsonTokenManager> parser(tokenManager);
+        JsonParser parser(tokenManager);
         readJsonObject(parser, data);
         double buildTime = timer.elapsedMicroseconds();
         buildTimes.push_back(buildTime);

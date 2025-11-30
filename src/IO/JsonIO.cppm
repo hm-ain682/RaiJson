@@ -83,7 +83,7 @@ void readJsonFromBuffer(std::vector<char>&& buffer, T& out,
         inputSource, tokenManager, warningOutput);
     tokenizer.tokenize();
 
-    ActiveJsonParser parser(tokenManager);
+    JsonParser parser(tokenManager);
     readJsonObject(parser, out);
     unknownKeysOut = std::move(parser.getUnknownKeys());
 }
@@ -225,7 +225,7 @@ void readJsonFileParallelImpl(std::ifstream& ifs, const std::string& filename, T
         }
     });
 
-    ActiveJsonParser parser(tokenManager);
+    JsonParser parser(tokenManager);
 
     try {
         readJsonObject(parser, out);
@@ -328,7 +328,7 @@ std::string getJsonContent(const T& obj) {
 /// @tparam T readJsonメソッドを持つ型。
 /// @param jsonText JSON形式の文字列。
 /// @param out 読み込み先のオブジェクト。
-export template <HasReadJson<ActiveJsonParser> T>
+export template <HasReadJson<JsonParser> T>
 void readJsonString(const std::string& jsonText, T& out) {
     std::vector<char> buffer(jsonText.begin(), jsonText.end());
     buffer.reserve(buffer.size() + aheadSize);
@@ -340,7 +340,7 @@ void readJsonString(const std::string& jsonText, T& out) {
         inputSource, tokenManager, warningOutput);
     tokenizer.tokenize();
 
-    ActiveJsonParser parser(tokenManager);
+    JsonParser parser(tokenManager);
     out.readJson(parser);
 }
 

@@ -37,9 +37,6 @@ namespace rai::json {
 // ・vector, unique_ptr, variant；要素がjson入出力対象型であること。
 // ・jsonFields()を持つ型→HasJsonFields
 
-// 文字列をJSONとして読み込む場合に用いる。文字列入力部分は並列化する必要がないため。
-export using ActiveJsonParser = JsonParser<JsonTokenManager>;
-
 /// @brief プリミティブ型かどうかを判定するconcept。
 /// @tparam T 判定対象の型。
 template <typename T>
@@ -128,7 +125,7 @@ public:
     virtual bool readFieldByKey(Parser& parser, void* obj, std::string_view key) const = 0;
 };
 
-export using IJsonFieldSet = JsonFieldSetBase<ActiveJsonParser>;
+export using IJsonFieldSet = JsonFieldSetBase<JsonParser>;
 
 // ******************************************************************************** フィールド定義
 
@@ -819,7 +816,7 @@ private:
 };
 
 export template <typename Owner, typename... Fields>
-using JsonFieldSet = JsonFieldSetBody<ActiveJsonParser, Owner, Fields...>;
+using JsonFieldSet = JsonFieldSetBody<JsonParser, Owner, Fields...>;
 
 // ******************************************************************************** ヘルパー関数用のメタプログラミング型特性
 
@@ -895,7 +892,7 @@ void writeJsonObject(JsonWriter& writer, const T& obj) {
 /// @param obj 読み込み先のオブジェクト。
 /// @note トップレベルのJSON読み込み用のヘルパー関数。
 export template <HasJsonFields T>
-void readJsonObject(ActiveJsonParser& parser, T& obj) {
+void readJsonObject(JsonParser& parser, T& obj) {
     auto& fields = obj.jsonFields();
     parser.startObject();
     while (!parser.nextIsEndObject()) {

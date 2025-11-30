@@ -14,17 +14,9 @@ import rai.json.json_token_manager;
 export namespace rai::json {
 
 // @brief トークン管理型が満たすべきインターフェース
-template <typename T>
-concept TokenManager = requires(T& t, const T& ct, JsonToken token) {
-    // 次のトークンを取得して消費
-    { t.take() } -> std::same_as<JsonToken>;
-    // 次のトークンを取得（消費しない）
-    { ct.peek() } -> std::same_as<const JsonToken&>;
-};
 
 // ******************************************************************************** JsonParser
 // @brief JSON5パーサー（トークン列からオブジェクトを構築）
-template <TokenManager TokMgr>
 class JsonParser {
     // ******************************************************************************** トークン取得
 private:
@@ -40,7 +32,7 @@ private:
 public:
     // @brief コンストラクタ（トークン管理オブジェクトを指定）
     // @param tokenManager トークン管理オブジェクトの参照
-    explicit JsonParser(TokMgr& tokenManager) : tokenManager_(tokenManager) {}
+    explicit JsonParser(JsonTokenManager& tokenManager) : tokenManager_(tokenManager) {}
 
     // ******************************************************************************** トークン読み取り
 public:
@@ -204,7 +196,7 @@ private:
 
     // ******************************************************************************** メンバー変数
 private:
-    TokMgr& tokenManager_;       ///< トークン管理オブジェクトの参照
+    JsonTokenManager& tokenManager_;       ///< トークン管理オブジェクトの参照
     std::vector<std::string> unknownKeys_{};  ///< 未知キー記録（診断用）
 
 public:
