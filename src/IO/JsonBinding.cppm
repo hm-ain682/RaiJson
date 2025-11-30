@@ -51,16 +51,17 @@ concept HasJsonFields = requires(const T& t) { t.jsonFields(); };
 /// @tparam Field フィールド型。
 /// @tparam ValueType フィールドが管理する値の型。
 template <typename Field, typename ValueType>
-concept HasToJson = requires(const Field& field, const ValueType& value) {
-    { field.toJson(value) } -> std::convertible_to<std::string>;
+concept HasToJson = requires(const Field& field, JsonWriter& writer, const ValueType& value) {
+    { field.toJson(writer, value) } -> std::same_as<void>;
 };
 
 /// @brief fromJsonメンバー関数を持つかどうかを判定するconcept。
 /// @tparam Field フィールド型。
 /// @tparam ValueType フィールドが管理する値の型。
+/// @note 変更: 以前は std::string を受け取っていたが、JsonParser を直接受け取るようにする。
 template <typename Field, typename ValueType>
-concept HasFromJson = requires(const Field& field, const std::string& str) {
-    { field.fromJson(str) } -> std::convertible_to<ValueType>;
+concept HasFromJson = requires(const Field& field, JsonParser& parser) {
+    { field.fromJson(parser) } -> std::convertible_to<ValueType>;
 };
 
 /// @brief JsonPolymorphicFieldかどうかを判定するconcept。
@@ -81,9 +82,8 @@ concept HasWriteJson = requires(const T& obj, JsonWriter& writer) {
 
 /// @brief readJsonメソッドを持つ型を表すconcept。
 /// @tparam T 型。
-/// @tparam Parser JsonParser互換型。
-export template <typename T, typename Parser>
-concept HasReadJson = requires(T& obj, Parser& parser) {
+export template <typename T>
+concept HasReadJson = requires(T& obj, JsonParser& parser) {
     { obj.readJson(parser) } -> std::same_as<void>;
 };
 
@@ -172,26 +172,28 @@ struct JsonEnumField : JsonField<MemberPtrType> {
     /// @param value 変換対象のenum値。
     /// @return JSON文字列。見つからない場合は例外を投げる。
     /// @note EnumConverterを使用して変換する。
-    std::string toJson(const ValueType& value) const {
-        if (!entriesPtr_ || entriesCount_ == 0) {
-            throw std::runtime_error("Enum entries not initialized");
-        }
+    void toJson(JsonWriter& writer, const ValueType& value) const {
         for (std::size_t i = 0; i < entriesCount_; ++i) {
             if (entriesPtr_[i].value == value) {
-                return std::string(entriesPtr_[i].name);
+                writer.writeObject(entriesPtr_[i].name);
+                return;
             }
         }
         throw std::runtime_error("Failed to convert enum to string");
     }
 
-    /// @brief 文字列からEnum値に変換する。
-    /// @param jsonValue JSON文字列。
+    /// @brief JsonParser から Enum値に変換する。
+    /// @param parser JsonParser インスタンス（現在の値を読み取るために使用される）。
     /// @return 変換されたenum値。見つからない場合は例外を投げる。
-    /// @note EnumConverterを使用して高速検索する。
-    ValueType fromJson(const std::string& jsonValue) const {
+    /// @note 内部で文字列を読み取り、enumエントリで検索する。
+    ValueType fromJson(JsonParser& parser) const {
         if (!entriesPtr_ || entriesCount_ == 0) {
             throw std::runtime_error("Enum entries not initialized");
         }
+
+        std::string jsonValue;
+        parser.readTo(jsonValue);
+
         for (std::size_t i = 0; i < entriesCount_; ++i) {
             if (jsonValue == entriesPtr_[i].name) {
                 return entriesPtr_[i].value;
@@ -208,6 +210,58 @@ struct PolymorphicTypeEntry {
     const char* typeName; ///< JSON上の型名。
     std::unique_ptr<BaseType> (*factory)(); ///< オブジェクト生成関数ポインタ。
 };
+
+// 共通: polymorphic オブジェクト一つ分の読み取りを行うヘルパー
+// - parser の現在位置は null または startObject のいずれかであることを期待
+// - 成功した場合、std::unique_ptr<BaseType>（null を示す場合は nullptr）を返す
+template <typename BaseType>
+std::unique_ptr<BaseType> readPolymorphicInstance(JsonParser& parser, const PolymorphicTypeEntry<BaseType>* entriesPtr, std::size_t entriesCount) {
+    if (parser.nextIsNull()) {
+        parser.skipValue();
+        return nullptr;
+    }
+
+    parser.startObject();
+
+    std::string typeKey = parser.nextKey();
+    if (typeKey != "type") {
+        throw std::runtime_error(std::string("Expected 'type' key for polymorphic object, got '") + typeKey + "'");
+    }
+
+    std::string typeName;
+    parser.readTo(typeName);
+
+    const PolymorphicTypeEntry<BaseType>* entry = nullptr;
+    for (std::size_t i = 0; i < entriesCount; ++i) {
+        if (entriesPtr[i].typeName == typeName) { entry = &entriesPtr[i]; break; }
+    }
+    if (!entry) {
+        throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeName);
+    }
+
+    auto tmp = entry->factory();
+
+    if constexpr (HasJsonFields<BaseType>) {
+        auto& fields = tmp->jsonFields();
+        while (!parser.nextIsEndObject()) {
+            std::string k = parser.nextKey();
+            if (!fields.readFieldByKey(parser, tmp.get(), k)) {
+                parser.noteUnknownKey(k);
+                parser.skipValue();
+            }
+        }
+    } else {
+        // 型情報がない場合は残りをスキップ
+        while (!parser.nextIsEndObject()) {
+            std::string k = parser.nextKey();
+            parser.noteUnknownKey(k);
+            parser.skipValue();
+        }
+    }
+
+    parser.endObject();
+    return tmp;
+}
 
 /// @brief ポリモーフィック型（unique_ptr<基底クラス>）用のJsonField派生クラス。
 /// @tparam MemberPtr unique_ptr<基底クラス>メンバー変数へのポインタ。
@@ -260,6 +314,29 @@ struct JsonPolymorphicField : JsonField<MemberPtrType> {
         throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeid(obj).name());
     }
 
+    /// @brief JsonParser から polymorphic オブジェクト（unique_ptr<T>）を読み込む。
+    /// @param parser JsonParser の参照。現在の位置にオブジェクトか null があることを期待する。
+    /// @return 要素型 T を保持する unique_ptr。null の場合は nullptr を返す。
+    ValueType fromJson(JsonParser& parser) const {
+        return readPolymorphicInstance<BaseType>(parser, entriesPtr_, entriesCount_);
+    }
+
+    /// @brief JsonWriter に対して polymorphic オブジェクトを書き出す。
+    /// @param writer JsonWriter の参照。
+    /// @param ptr 書き込み対象の unique_ptr（null 可）。
+    void toJson(JsonWriter& writer, const ValueType& ptr) const {
+        if (!ptr) {
+            writer.null();
+            return;
+        }
+        writer.startObject();
+        std::string typeName = getTypeName(*ptr);
+        writer.key("type");
+        writer.writeObject(typeName);
+        auto& fields = ptr->jsonFields();
+        fields.writeFieldsOnly(writer, ptr.get());
+        writer.endObject();
+    }
 };
 
 /// @brief ポリモーフィックな配列（vector<std::unique_ptr<BaseType>>）用のフィールド。
@@ -300,6 +377,41 @@ struct JsonPolymorphicArrayField : JsonField<MemberPtrType> {
             if (typeid(obj) == typeid(*testObj)) return entriesPtr_[i].typeName;
         }
         throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeid(obj).name());
+    }
+
+    /// @brief JsonParser から polymorphic 配列（vector<std::unique_ptr<T>>）を読み込む。
+    /// @param parser JsonParser の参照。現在の位置に配列があることを期待する。
+    /// @return 読み込まれたベクター（要素は unique_ptr<T>）。
+    ValueType fromJson(JsonParser& parser) const {
+        ValueType out;
+        parser.startArray();
+        out.clear();
+        while (!parser.nextIsEndArray()) {
+            out.push_back(readPolymorphicInstance<BaseType>(parser, entriesPtr_, entriesCount_));
+        }
+        parser.endArray();
+        return out;
+    }
+
+    /// @brief JsonWriter に対して polymorphic 配列を書き出す。
+    /// @param writer JsonWriter の参照。
+    /// @param vec 書き込み対象の vector<std::unique_ptr<T>>。
+    void toJson(JsonWriter& writer, const ValueType& vec) const {
+        writer.startArray();
+        for (const auto& ptr : vec) {
+            if (!ptr) {
+                writer.null();
+                continue;
+            }
+            writer.startObject();
+            std::string typeName = getTypeName(*ptr);
+            writer.key("type");
+            writer.writeObject(typeName);
+            auto& fields = ptr->jsonFields();
+            fields.writeFieldsOnly(writer, ptr.get());
+            writer.endObject();
+        }
+        writer.endArray();
     }
 };
 
@@ -347,14 +459,9 @@ public:
             const auto& value = owner->*(field.member);
             using FieldType = std::remove_cvref_t<decltype(field)>;
 
-            // ポリモーフィックフィールドの場合は特別処理
-            if constexpr (IsPolymorphicField<FieldType>) {
-                writePolymorphicObject(writer, field, value);
-            }
             // toJsonメンバーを持つ場合はそれを使用
-            else if constexpr (HasToJson<FieldType, std::remove_cvref_t<decltype(value)>>) {
-                std::string jsonValue = field.toJson(value);
-                writer.writeObject(jsonValue);
+            if constexpr (HasToJson<FieldType, std::remove_cvref_t<decltype(value)>>) {
+                field.toJson(writer, value);
             } else {
                 // ここでエラーになる場合は、fieldの対象メンバー変数の型が、json入出力対象対象型ではない。
                 writeObject(writer, value);
@@ -401,50 +508,8 @@ private:
         }
     }
 
-    // ポリモーフィック型（JsonPolymorphicFieldで管理されるunique_ptr）の書き込み
-    template <typename FieldType, HasJsonFields T>
-    void writePolymorphicObject(JsonWriter& writer, const FieldType& field, const std::unique_ptr<T>& ptr) const {
-        if (!ptr) {
-            writer.null();
-            return;
-        }
-
-        // "type"キーを含むオブジェクトとして書き出す
-        writer.startObject();
-
-        // 型名を取得して書き出す
-        std::string typeName = field.getTypeName(*ptr);
-        writer.key("type");
-        writer.writeObject(typeName);
-
-        // 実際のフィールド内容を書き出す
-        auto& fields = ptr->jsonFields();
-        fields.writeFieldsOnly(writer, ptr.get());
-
-        writer.endObject();
-    }
-
-    // ポリモーフィック型配列（vector<std::unique_ptr<T>>）の書き出し
-    template <typename FieldType, HasJsonFields T>
-    void writePolymorphicObject(JsonWriter& writer, const FieldType& field, const std::vector<std::unique_ptr<T>>& vec) const {
-        writer.startArray();
-        for (const auto& ptr : vec) {
-            if (!ptr) {
-                writer.null();
-                continue;
-            }
-            writer.startObject();
-            std::string typeName = field.getTypeName(*ptr);
-            writer.key("type");
-            writer.writeObject(typeName);
-
-            auto& fields = ptr->jsonFields();
-            fields.writeFieldsOnly(writer, ptr.get());
-
-            writer.endObject();
-        }
-        writer.endArray();
-    }
+    // ポリモーフィック型の書き出しは各 JsonPolymorphicField/JsonPolymorphicArrayField の
+    // toJson(JsonWriter&, value) に移譲されています。
 
     // variant型の処理
     template <typename... Types>
@@ -514,15 +579,9 @@ private:
                 using FieldType = std::remove_cvref_t<decltype(field)>;
                 using ValueType = typename FieldType::ValueType;
 
-                // ポリモーフィックフィールドの場合は特別処理
-                if constexpr (IsPolymorphicField<FieldType>) {
-                    readPolymorphicObject(parser, field, obj.*(field.member));
-                }
-                // fromJsonメンバーを持つ場合はそれを使用
-                else if constexpr (HasFromJson<FieldType, ValueType>) {
-                    std::string jsonValue;
-                    parser.readTo(jsonValue);
-                    obj.*(field.member) = field.fromJson(jsonValue);
+                // fromJson メンバーを持つ場合はそれを使用（ポリモーフィック含む）
+                if constexpr (HasFromJson<FieldType, ValueType>) {
+                    obj.*(field.member) = field.fromJson(parser);
                 } else {
                     // ここでエラーになる場合は、fieldの対象メンバー変数の型が、json入出力対象対象型ではない。
                     readObject(parser, obj.*(field.member));
@@ -548,108 +607,6 @@ private:
 
     void readObject(JsonParser& parser, std::string& out) const {
         parser.readTo(out);
-    }
-
-    /// @brief ポリモーフィック型（unique_ptr）を読み込む。
-    /// @tparam FieldType JsonPolymorphicFieldの型。
-    /// @tparam T unique_ptrの要素型。
-    /// @param parser 読み取り元のJsonParser互換オブジェクト。
-    /// @param field ポリモーフィックフィールド。
-    /// @param out 読み込み先のunique_ptr。
-    /// @note nullの場合はnullptrを設定し、そうでない場合は型名に基づいてオブジェクトを生成して読み込む。
-    template <typename FieldType, typename T>
-    void readPolymorphicObject(JsonParser& parser, const FieldType& field, std::unique_ptr<T>& out) const {
-        if (parser.nextIsNull()) {
-            parser.skipValue();
-            out.reset();
-            return;
-        }
-
-        parser.startObject();
-
-        // "type"キーを読み込む
-        std::string typeKey = parser.nextKey();
-        if (typeKey != "type") {
-            throw std::runtime_error(std::string("Expected 'type' key for polymorphic object, got '") + typeKey + "'");
-        }
-
-        std::string typeName;
-        parser.readTo(typeName);
-
-        // 型名からファクトリを検索してオブジェクトを生成
-        const auto* entry = field.findEntry(typeName);
-        if (!entry) {
-            throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeName);
-        }
-
-        auto tmp = entry->factory();
-
-        // オブジェクトのフィールドを読み込む
-        // jsonFields()が返すFieldSetを使用してフィールドを読み込む
-        if constexpr (HasJsonFields<T>) {
-            auto& fields = tmp->jsonFields();
-
-            // 残りのキーを読み込んでフィールドにマッピング
-            readObjectFieldsByFieldSet(parser, fields, tmp.get());
-        } else {
-            // HasJsonFieldsを実装していない場合は、残りをスキップ
-            while (!parser.nextIsEndObject()) {
-                std::string k = parser.nextKey();
-                parser.noteUnknownKey(k);
-                parser.skipValue();
-            }
-        }
-
-        parser.endObject();
-        out = std::move(tmp);
-    }
-
-    // ポリモーフィック型配列（vector<std::unique_ptr<T>>）の読み込み
-    template <typename FieldType, typename T>
-    void readPolymorphicObject(JsonParser& parser, const FieldType& field, std::vector<std::unique_ptr<T>>& out) const {
-        // null は配列そのものが null の場合の扱いは上位ハンドラに任せる。
-        parser.startArray();
-        out.clear();
-        while (!parser.nextIsEndArray()) {
-            if (parser.nextIsNull()) {
-                parser.skipValue();
-                out.push_back(nullptr);
-                continue;
-            }
-
-            parser.startObject();
-
-            // type キー読み取り
-            std::string typeKey = parser.nextKey();
-            if (typeKey != "type") {
-                throw std::runtime_error(std::string("Expected 'type' key for polymorphic object, got '") + typeKey + "'");
-            }
-
-            std::string typeName;
-            parser.readTo(typeName);
-
-            const auto* entry = field.findEntry(typeName);
-            if (!entry) {
-                throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeName);
-            }
-
-            auto tmp = entry->factory();
-
-            if constexpr (HasJsonFields<T>) {
-                auto& fields = tmp->jsonFields();
-                readObjectFieldsByFieldSet(parser, fields, tmp.get());
-            } else {
-                while (!parser.nextIsEndObject()) {
-                    std::string k = parser.nextKey();
-                    parser.noteUnknownKey(k);
-                    parser.skipValue();
-                }
-            }
-
-            parser.endObject();
-            out.push_back(std::move(tmp));
-        }
-        parser.endArray();
     }
 
     /// @brief JsonFieldSetBaseを使用してオブジェクトのフィールドを読み込む（startObject/endObject済み）。
@@ -691,7 +648,7 @@ private:
 
     // カスタムJSON入力を持つ型（readJsonメソッドを持つ型）
     template <typename T>
-        requires HasReadJson<T, JsonParser>
+        requires HasReadJson<T>
     void readObject(JsonParser& parser, T& out) const {
         out.readJson(parser);
     }
@@ -736,15 +693,9 @@ public:
             using FieldType = std::remove_cvref_t<decltype(field)>;
             using ValueType = typename FieldType::ValueType;
 
-            // ポリモーフィックフィールドの場合は特別処理
-            if constexpr (IsPolymorphicField<FieldType>) {
-                readPolymorphicObject(parser, field, owner->*(field.member));
-            }
-            // fromJsonメンバーを持つ場合はそれを使用
-            else if constexpr (HasFromJson<FieldType, ValueType>) {
-                std::string jsonValue;
-                parser.readTo(jsonValue);
-                owner->*(field.member) = field.fromJson(jsonValue);
+            // fromJson メンバーを持つ場合はそれを使用（ポリモーフィック含む）
+            if constexpr (HasFromJson<FieldType, ValueType>) {
+                owner->*(field.member) = field.fromJson(parser);
             } else {
                 readObject(parser, owner->*(field.member));
             }

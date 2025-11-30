@@ -328,7 +328,7 @@ std::string getJsonContent(const T& obj) {
 /// @tparam T readJsonメソッドを持つ型。
 /// @param jsonText JSON形式の文字列。
 /// @param out 読み込み先のオブジェクト。
-export template <HasReadJson<JsonParser> T>
+export template <HasReadJson T>
 void readJsonString(const std::string& jsonText, T& out) {
     std::vector<char> buffer(jsonText.begin(), jsonText.end());
     buffer.reserve(buffer.size() + aheadSize);
