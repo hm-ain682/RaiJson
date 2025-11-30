@@ -104,9 +104,7 @@ struct MemberPointerTraits<Value Owner::*> {
 
 /// @brief JSONフィールドセットの型消去用インターフェース。
 /// @note 仮想関数の戻り値型として使用可能にするための基底クラス。
-/// @tparam Parser JsonParser互換型。
-export template<typename Parser>
-class JsonFieldSetBase {
+export class JsonFieldSetBase {
 public:
     virtual ~JsonFieldSetBase() = default;
 
@@ -117,15 +115,15 @@ public:
     virtual void writeFieldsOnly(JsonWriter& writer, const void* obj) const = 0;
 
     /// @brief JSONキーに対応するフィールドを読み込む（startObject/endObjectなし）。
-    /// @param parser 読み取り元のJsonParser互換オブジェクト。
+    /// @param parser 読み取り元のJsonParserオブジェクト。
     /// @param obj 対象オブジェクトのvoidポインタ。
     /// @param key 読み込むフィールドのキー名。
     /// @return フィールドが見つかって読み込まれた場合はtrue、見つからない場合はfalse。
     /// @note ポリモーフィック型の読み込み時に使用する。
-    virtual bool readFieldByKey(Parser& parser, void* obj, std::string_view key) const = 0;
+    virtual bool readFieldByKey(JsonParser& parser, void* obj, std::string_view key) const = 0;
 };
 
-export using IJsonFieldSet = JsonFieldSetBase<JsonParser>;
+export using IJsonFieldSet = JsonFieldSetBase;
 
 // ******************************************************************************** フィールド定義
 
@@ -310,11 +308,9 @@ struct JsonPolymorphicArrayField : JsonField<MemberPtrType> {
 /// @brief JSONフィールドセットの実装クラス。
 /// @tparam Owner 所有者型。
 /// @tparam Fields フィールド型のパラメータパック。
-export template <typename Parser, typename Owner, typename... Fields>
-class JsonFieldSetBody : public JsonFieldSetBase<Parser> {
+export template <typename Owner, typename... Fields>
+class JsonFieldSetBody : public JsonFieldSetBase {
 private:
-    using BaseType = JsonFieldSetBase<Parser>;
-
     // static_assertをメンバー関数に移動して遅延評価させる
     static constexpr void validateFields() {
         static_assert((std::is_base_of_v<typename std::remove_cvref_t<Fields>::OwnerType, Owner> && ...),
@@ -322,7 +318,6 @@ private:
     }
 
 public:
-    using OwnerType = Owner;
     using FieldTupleType = std::tuple<std::remove_cvref_t<Fields>...>;
 
     constexpr explicit JsonFieldSetBody(Fields... fields) : fields_(std::move(fields)...) {
@@ -486,7 +481,7 @@ private:
 private:
     // jsonFields を持つ型への読み込み
     template <HasJsonFields T>
-    void readObject(Parser& parser, T& out) const {
+    void readObject(JsonParser& parser, T& out) const {
         auto& fields = out.jsonFields();
         parser.startObject();
         readObjectFieldsByFieldSet(parser, fields, &out);
@@ -496,8 +491,8 @@ private:
     /// @brief オブジェクトのフィールドをJSONから読み込む（startObject/endObject済み）。
     /// @param parser 読み取り元のJsonParser互換オブジェクト。
     /// @param obj 対象オブジェクト。
-    /// @note jsonFields()が返すBaseTypeのreadFieldByKeyメソッドを使用する。
-    void readObjectFields(Parser& parser, Owner& obj) const {
+    /// @note jsonFields()が返すJsonFieldSetBaseのreadFieldByKeyメソッドを使用する。
+    void readObjectFields(JsonParser& parser, Owner& obj) const {
         constexpr std::size_t N = sizeof...(Fields);
         std::bitset<N> seen{};
         while (!parser.nextIsEndObject()) {
@@ -545,13 +540,13 @@ private:
     }
 
     template <IsFundamentalValue T>
-    void readObject(Parser& parser, T& out) const {
+    void readObject(JsonParser& parser, T& out) const {
         T temp = out;
         parser.readTo(temp);
         out = temp;
     }
 
-    void readObject(Parser& parser, std::string& out) const {
+    void readObject(JsonParser& parser, std::string& out) const {
         parser.readTo(out);
     }
 
@@ -563,7 +558,7 @@ private:
     /// @param out 読み込み先のunique_ptr。
     /// @note nullの場合はnullptrを設定し、そうでない場合は型名に基づいてオブジェクトを生成して読み込む。
     template <typename FieldType, typename T>
-    void readPolymorphicObject(Parser& parser, const FieldType& field, std::unique_ptr<T>& out) const {
+    void readPolymorphicObject(JsonParser& parser, const FieldType& field, std::unique_ptr<T>& out) const {
         if (parser.nextIsNull()) {
             parser.skipValue();
             out.reset();
@@ -611,7 +606,7 @@ private:
 
     // ポリモーフィック型配列（vector<std::unique_ptr<T>>）の読み込み
     template <typename FieldType, typename T>
-    void readPolymorphicObject(Parser& parser, const FieldType& field, std::vector<std::unique_ptr<T>>& out) const {
+    void readPolymorphicObject(JsonParser& parser, const FieldType& field, std::vector<std::unique_ptr<T>>& out) const {
         // null は配列そのものが null の場合の扱いは上位ハンドラに任せる。
         parser.startArray();
         out.clear();
@@ -657,14 +652,14 @@ private:
         parser.endArray();
     }
 
-    /// @brief BaseTypeを使用してオブジェクトのフィールドを読み込む（startObject/endObject済み）。
+    /// @brief JsonFieldSetBaseを使用してオブジェクトのフィールドを読み込む（startObject/endObject済み）。
     /// @tparam T オブジェクトの型。
     /// @param parser 読み取り元のJsonParser互換オブジェクト。
     /// @param fields オブジェクトのフィールドセット。
     /// @param obj 読み込み先のオブジェクト。
     /// @note この関数は、オブジェクトが既にstartObjectされている状態を想定している。
     template <typename T>
-    void readObjectFieldsByFieldSet(Parser& parser, const BaseType& fields, T* obj) const {
+    void readObjectFieldsByFieldSet(JsonParser& parser, const JsonFieldSetBase& fields, T* obj) const {
         while (!parser.nextIsEndObject()) {
             std::string k = parser.nextKey();
             if (!fields.readFieldByKey(parser, obj, k)) {
@@ -676,7 +671,7 @@ private:
 
     // unique_ptr<T>（null を許可）
     template <typename T>
-    void readObject(Parser& parser, std::unique_ptr<T>& out) const {
+    void readObject(JsonParser& parser, std::unique_ptr<T>& out) const {
         if (parser.nextIsNull()) {
             parser.skipValue();
             out.reset();
@@ -695,14 +690,15 @@ private:
     }
 
     // カスタムJSON入力を持つ型（readJsonメソッドを持つ型）
-    template <HasReadJson<Parser> T>
-    void readObject(Parser& parser, T& out) const {
+    template <typename T>
+        requires HasReadJson<T, JsonParser>
+    void readObject(JsonParser& parser, T& out) const {
         out.readJson(parser);
     }
 
     // 配列
     template <typename T>
-    void readObject(Parser& parser, std::vector<T>& out) const {
+    void readObject(JsonParser& parser, std::vector<T>& out) const {
         parser.startArray();
         out.clear();
         while (!parser.nextIsEndArray()) {
@@ -728,7 +724,7 @@ public:
     /// @param key 読み込むフィールドのキー名。
     /// @return フィールドが見つかって読み込まれた場合はtrue、見つからない場合はfalse。
     /// @note ポリモーフィック型の読み込み時に使用する。
-    bool readFieldByKey(Parser& parser, void* obj, std::string_view key) const override {
+    bool readFieldByKey(JsonParser& parser, void* obj, std::string_view key) const override {
         Owner* owner = static_cast<Owner*>(obj);
         auto foundIndex = findFieldIndex(key);
         if (!foundIndex) {
@@ -816,7 +812,7 @@ private:
 };
 
 export template <typename Owner, typename... Fields>
-using JsonFieldSet = JsonFieldSetBody<JsonParser, Owner, Fields...>;
+using JsonFieldSet = JsonFieldSetBody<Owner, Fields...>;
 
 // ******************************************************************************** ヘルパー関数用のメタプログラミング型特性
 
