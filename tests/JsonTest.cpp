@@ -138,3 +138,83 @@ TEST(JsonReaderTest, VirtualDispatchRead) {
     EXPECT_TRUE(b.w);
     EXPECT_FLOAT_EQ(b.y, 2.5f);
 }
+
+// ********************************************************************************
+// Polymorphic field/array tests for custom discriminator key
+// ********************************************************************************
+
+struct PB {
+    virtual ~PB() = default;
+    virtual const IJsonFieldSet& jsonFields() const {
+        static const auto f = makeJsonFieldSet<PB>();
+        return f;
+    }
+};
+
+struct POne : public PB {
+    int x = 0;
+    const IJsonFieldSet& jsonFields() const override {
+        static const auto f = makeJsonFieldSet<POne>(
+            JsonField(&POne::x, "x")
+        );
+        return f;
+    }
+};
+
+struct PTwo : public PB {
+    std::string s;
+    const IJsonFieldSet& jsonFields() const override {
+        static const auto f = makeJsonFieldSet<PTwo>(
+            JsonField(&PTwo::s, "s")
+        );
+        return f;
+    }
+};
+
+constexpr PolymorphicTypeEntry<PB> pbEntries[] = {
+    {"One", []() -> std::unique_ptr<PB> { return std::make_unique<POne>(); }},
+    {"Two", []() -> std::unique_ptr<PB> { return std::make_unique<PTwo>(); }}
+};
+
+struct Holder {
+    std::unique_ptr<PB> item;
+    std::vector<std::unique_ptr<PB>> arr;
+
+    const IJsonFieldSet& jsonFields() const {
+        static const auto fields = makeJsonFieldSet<Holder>(
+            JsonPolymorphicField(&Holder::item, "item", pbEntries, "kind"),
+            JsonPolymorphicArrayField(&Holder::arr, "arr", pbEntries, "kind")
+        );
+        return fields;
+    }
+};
+
+TEST(JsonPolymorphicTest, ReadSingleCustomKey) {
+    const std::string json = "{\"item\":{\"kind\":\"One\",\"x\":42}}";
+    Holder h; readJsonString(json, h);
+    ASSERT_TRUE(h.item);
+    auto* p = dynamic_cast<POne*>(h.item.get());
+    ASSERT_NE(p, nullptr);
+    EXPECT_EQ(p->x, 42);
+}
+
+TEST(JsonPolymorphicTest, ReadArrayCustomKeyAndNull) {
+    const std::string json = "{\"arr\":[{\"kind\":\"One\",\"x\":1},{\"kind\":\"Two\",\"s\":\"abc\"},null]}";
+    Holder h; readJsonString(json, h);
+    ASSERT_EQ(h.arr.size(), 3u);
+    auto* p0 = dynamic_cast<POne*>(h.arr[0].get()); ASSERT_NE(p0, nullptr); EXPECT_EQ(p0->x, 1);
+    auto* p1 = dynamic_cast<PTwo*>(h.arr[1].get()); ASSERT_NE(p1, nullptr); EXPECT_EQ(p1->s, "abc");
+    EXPECT_EQ(h.arr[2], nullptr);
+}
+
+TEST(JsonPolymorphicTest, WriteAndReadRoundTripUsingCustomKey) {
+    Holder h;
+    auto one = std::make_unique<POne>(); one->x = 99; h.item = std::move(one);
+
+    auto text = getJsonContent(h);
+
+    Holder parsed; readJsonString(text, parsed);
+    ASSERT_TRUE(parsed.item);
+    auto* p = dynamic_cast<POne*>(parsed.item.get()); ASSERT_NE(p, nullptr);
+    EXPECT_EQ(p->x, 99);
+}
