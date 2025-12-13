@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CC: clang-18
+      CXX: clang++-18
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain and build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 lld-18 python3-pip
+          python3 -m pip install --upgrade pip
+          python3 -m pip install cmake ninja
+          cmake --version
+          ninja --version
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -D CMAKE_C_COMPILER=clang-18 \
+            -D CMAKE_CXX_COMPILER=clang++-18 \
+            -D CMAKE_EXE_LINKER_FLAGS="-fuse-ld=lld-18" \
+            -D CMAKE_MODULE_LINKER_FLAGS="-fuse-ld=lld-18" \
+            -D CMAKE_SHARED_LINKER_FLAGS="-fuse-ld=lld-18" \
+            -D RAIJSON_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --config Debug
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -V
