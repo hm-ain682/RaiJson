@@ -10,9 +10,11 @@ import rai.json.json_binding;
 import rai.json.json_io;
 import rai.json.parallel_input_stream_source;
 import rai.json.reading_ahead_buffer;
+import rai.collection.sorted_hash_array_map;
 #include <gtest/gtest.h>
 #include <chrono>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <memory>
 #include <fstream>
@@ -119,11 +121,14 @@ struct ContainerNode : public BaseNode {
 // ポリモーフィック型のディスパッチ登録
 // ********************************************************************************
 
-// ポリモーフィック型のエントリ定義
-constexpr PolymorphicTypeEntry<BaseNode> baseNodeEntries[] = {
-    {"DataNode", []() -> std::unique_ptr<BaseNode> { return std::make_unique<DataNode>(); }},
-    {"ContainerNode", []() -> std::unique_ptr<BaseNode> { return std::make_unique<ContainerNode>(); }}
-};
+using MapEntry = std::pair<std::string_view, PolymorphicTypeFactory<BaseNode>>;
+
+// ポリモーフィック型エントリマップ（makeSortedHashArrayMapを使用）
+inline const auto baseNodeEntriesMap = rai::collection::makeSortedHashArrayMap(
+    MapEntry{ std::string_view("DataNode"), [](){ return std::make_unique<DataNode>(); }},
+    MapEntry{ std::string_view("ContainerNode"), [](){ return std::make_unique<ContainerNode>(); } }
+);
+
 
 // ComplexData構造体を再定義（ポリモーフィックフィールドを使用）
 struct ComplexData {
@@ -137,7 +142,7 @@ struct ComplexData {
         static const auto fields = makeJsonFieldSet<ComplexData>(
             JsonField(&ComplexData::name, "name"),
             JsonField(&ComplexData::level, "level"),
-            JsonPolymorphicField(&ComplexData::node, "node", baseNodeEntries),
+            JsonPolymorphicField(&ComplexData::node, "node", baseNodeEntriesMap),
             JsonField(&ComplexData::items, "items"),
             JsonField(&ComplexData::collections, "collections")
         );

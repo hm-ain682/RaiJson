@@ -2,8 +2,10 @@ import rai.json.json_field;
 import rai.json.json_writer;
 import rai.json.json_binding;
 import rai.json.json_io;
+import rai.collection.sorted_hash_array_map;
 #include <gtest/gtest.h>
 #include <string>
+#include <string_view>
 #include <tuple>
 
 using namespace rai::json;
@@ -171,10 +173,13 @@ struct PTwo : public PB {
     }
 };
 
-constexpr PolymorphicTypeEntry<PB> pbEntries[] = {
-    {"One", []() -> std::unique_ptr<PB> { return std::make_unique<POne>(); }},
-    {"Two", []() -> std::unique_ptr<PB> { return std::make_unique<PTwo>(); }}
-};
+using MapEntry = std::pair<std::string_view, std::function<std::unique_ptr<PB>()>>;
+
+// entries を直接マップ構築（配列を経由せず簡潔に記述）
+inline const auto pbEntriesMap = rai::collection::makeSortedHashArrayMap(
+    MapEntry{ "One", []() { return std::make_unique<POne>(); } },
+    MapEntry{ "Two", []() { return std::make_unique<PTwo>(); } }
+);
 
 struct Holder {
     std::unique_ptr<PB> item;
@@ -182,8 +187,8 @@ struct Holder {
 
     const IJsonFieldSet& jsonFields() const {
         static const auto fields = makeJsonFieldSet<Holder>(
-            JsonPolymorphicField(&Holder::item, "item", pbEntries, "kind"),
-            JsonPolymorphicArrayField(&Holder::arr, "arr", pbEntries, "kind")
+            JsonPolymorphicField(&Holder::item, "item", pbEntriesMap, "kind"),
+            JsonPolymorphicArrayField(&Holder::arr, "arr", pbEntriesMap, "kind")
         );
         return fields;
     }

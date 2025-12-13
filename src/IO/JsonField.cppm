@@ -136,20 +136,16 @@ private:
     collection::SortedHashArrayMap<ValueType, std::string_view, N> valueToName_{}; ///< enum value -> name
 };
 
-/// @brief 型名とファクトリ関数のマッピングエントリ。
-/// @tparam BaseType 基底クラス型。
+/// @brief ポリモーフィック型用のファクトリ関数型。
 export template <typename BaseType>
-struct PolymorphicTypeEntry {
-    const char* typeName; ///< JSON上の型名。
-    std::unique_ptr<BaseType> (*factory)(); ///< オブジェクト生成関数ポインタ。
-};
+using PolymorphicTypeFactory = std::function<std::unique_ptr<BaseType>()>;
 
 /// @brief 共通: polymorphic オブジェクト一つ分の読み取りを行うヘルパー
 /// - parser の現在位置は null または startObject のいずれかであることを期待
 /// - 成功した場合、std::unique_ptr<BaseType>（null を示す場合は nullptr）を返す
 template <typename BaseType, std::size_t N>
 std::unique_ptr<BaseType> readPolymorphicInstance(JsonParser& parser,
-    const collection::SortedHashArrayMap<std::string_view, PolymorphicTypeEntry<BaseType>, N>& entriesMap,
+    const collection::SortedHashArrayMap<std::string_view, PolymorphicTypeFactory<BaseType>, N>& entriesMap,
     std::string_view jsonKey = "type") {
     if (parser.nextIsNull()) {
         parser.skipValue();
@@ -171,7 +167,7 @@ std::unique_ptr<BaseType> readPolymorphicInstance(JsonParser& parser,
         throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeName);
     }
 
-    auto tmp = entryPtr->factory();
+    auto tmp = (*entryPtr)();
 
     if constexpr (HasJsonFields<BaseType>) {
         auto& fields = tmp->jsonFields();
@@ -202,7 +198,7 @@ struct JsonPolymorphicField : JsonField<MemberPtrType> {
     using Base = JsonField<MemberPtrType>;
     using typename Base::ValueType;
     using BaseType = typename ValueType::element_type;
-    using Map = collection::SortedHashArrayMap<std::string_view, PolymorphicTypeEntry<BaseType>, N>;
+    using Map = collection::SortedHashArrayMap<std::string_view, PolymorphicTypeFactory<BaseType>, N>;
 
     // ValueTypeはstd::unique_ptr<T>であることを確認
     static_assert(std::is_same_v<ValueType, std::unique_ptr<typename ValueType::element_type>>,
@@ -213,19 +209,13 @@ struct JsonPolymorphicField : JsonField<MemberPtrType> {
     /// @param req 必須フィールドかどうか。
     // コンストラクタ: 書式は (memberPtr, keyName, entriesArray, req=false)
     constexpr explicit JsonPolymorphicField(MemberPtrType memberPtr, const char* keyName,
-        const PolymorphicTypeEntry<BaseType> (&entries)[N], const char* jsonKey = "type", bool req = false)
-        : Base(memberPtr, keyName, req), jsonKey_(jsonKey) {
-        collection::KeyValue<std::string_view, PolymorphicTypeEntry<BaseType>> nv[N];
-        for (std::size_t i = 0; i < N; ++i) {
-            nv[i] = { entries[i].typeName, entries[i] };
-        }
-        nameToEntry_ = Map(nv);
-    }
+        const Map& entries, const char* jsonKey = "type", bool req = false)
+        : Base(memberPtr, keyName, req), nameToEntry_(entries), jsonKey_(jsonKey) {}
 
     /// @brief 型名から対応するエントリを検索する。
     /// @param typeName 検索する型名。
     /// @return 見つかった場合はエントリへのポインタ、見つからない場合はnullptr。
-    const PolymorphicTypeEntry<BaseType>* findEntry(std::string_view typeName) const {
+    const PolymorphicTypeFactory<BaseType>* findEntry(std::string_view typeName) const {
         return nameToEntry_.findValue(typeName);
     }
 
@@ -235,13 +225,13 @@ struct JsonPolymorphicField : JsonField<MemberPtrType> {
     std::string getTypeName(const BaseType& obj) const {
         bool found = false;
         std::string result;
-        nameToEntry_.forEach([&](const PolymorphicTypeEntry<BaseType>& e) {
-            auto testObj = e.factory();
+        for (auto& it : nameToEntry_) {
+            auto testObj = it.value();
             if (!found && typeid(obj) == typeid(*testObj)) {
                 found = true;
-                result = e.typeName;
+                result = it.key;
             }
-        });
+        }
         if (!found) throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeid(obj).name());
         return result;
     }
@@ -271,8 +261,8 @@ struct JsonPolymorphicField : JsonField<MemberPtrType> {
     }
 
 private:
-    //! entries は typeName -> entry のマップとして保持
-    Map nameToEntry_{};
+    //! entries は typeName -> entry のマップ参照として保持
+    const Map& nameToEntry_;
 
     //! JSON 内で型を判別するためのキー名（デフォルトは "type"）
     const char* jsonKey_;
@@ -285,7 +275,7 @@ struct JsonPolymorphicArrayField : JsonField<MemberPtrType> {
     using typename Base::ValueType;
     using ElementUniquePtr = typename ValueType::value_type; // std::unique_ptr<T>
     using BaseType = typename ElementUniquePtr::element_type;
-    using Map = collection::SortedHashArrayMap<std::string_view, PolymorphicTypeEntry<BaseType>, N>;
+    using Map = collection::SortedHashArrayMap<std::string_view, PolymorphicTypeFactory<BaseType>, N>;
 
     // ValueType は std::vector<std::unique_ptr<T>> であることを確認する
     template <typename X>
@@ -296,29 +286,25 @@ struct JsonPolymorphicArrayField : JsonField<MemberPtrType> {
         "JsonPolymorphicArrayField requires std::vector<std::unique_ptr<T>> type");
 
     constexpr explicit JsonPolymorphicArrayField(MemberPtrType memberPtr, const char* keyName,
-        const PolymorphicTypeEntry<BaseType> (&entries)[N], const char* jsonKey = "type", bool req = false)
-        : Base(memberPtr, keyName, req), jsonKey_(jsonKey) {
-        collection::KeyValue<std::string_view, PolymorphicTypeEntry<BaseType>> nv[N];
-        for (std::size_t i = 0; i < N; ++i) nv[i] = { entries[i].typeName, entries[i] };
-        nameToEntry_ = Map(nv);
-    }
+        const Map& entries, const char* jsonKey = "type", bool req = false)
+        : Base(memberPtr, keyName, req), nameToEntry_(entries), jsonKey_(jsonKey) {}
 
-    const PolymorphicTypeEntry<BaseType>* findEntry(std::string_view typeName) const {
+    const PolymorphicTypeFactory<BaseType>* findEntry(std::string_view typeName) const {
         return nameToEntry_.findValue(typeName);
     }
 
     std::string getTypeName(const BaseType& obj) const {
         bool found = false;
         std::string result;
-        nameToEntry_.forEach([&](const PolymorphicTypeEntry<BaseType>& e) {
+        for (auto& it : nameToEntry_) {
             if (!found) {
-                auto testObj = e.factory();
+                auto testObj = it.value();
                 if (typeid(obj) == typeid(*testObj)) {
                     found = true;
-                    result = e.typeName;
+                    result = it.key;
                 }
             }
-        });
+        }
         if (found) return result;
         throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeid(obj).name());
     }
@@ -359,7 +345,7 @@ struct JsonPolymorphicArrayField : JsonField<MemberPtrType> {
     }
 
 private:
-    Map nameToEntry_{};
+    const Map& nameToEntry_;
 
     //! JSON 内で型を判別するためのキー名
     const char* jsonKey_;

@@ -79,7 +79,7 @@ public:
         // Build a small array of key/value descriptors from the stored fields_
         // so SortedHashArrayMap can be constructed from elements that have
         // .key and .value members (we map JsonField::required -> value here).
-        using KV = collection::KeyValue<std::string_view, bool>;
+        using KV = std::pair<std::string_view, bool>;
         auto buildArr = [&]<std::size_t... I>(std::index_sequence<I...>) {
             std::array<KV, N_> arr{};
             ((arr[I] = KV{ std::get<I>(fields_).key, std::get<I>(fields_).required }), ...);
