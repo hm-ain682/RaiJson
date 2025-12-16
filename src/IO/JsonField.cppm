@@ -218,10 +218,7 @@ PtrType readPolymorphicInstance(JsonParser& parser,
 
     if constexpr (HasJsonFields<BaseType>) {
         auto& fields = tmp->jsonFields();
-        BaseType* raw = [&]() -> BaseType* {
-            if constexpr (std::is_same_v<PtrType, BaseType*>) return tmp;
-            else return tmp.get();
-        }();
+        BaseType* raw = std::to_address(tmp);
         while (!parser.nextIsEndObject()) {
             std::string k = parser.nextKey();
             if (!fields.readFieldByKey(parser, raw, k)) {
@@ -306,14 +303,7 @@ struct JsonPolymorphicField : JsonField<MemberPtrType> {
         writer.key(jsonKey_);
         writer.writeObject(typeName);
         auto& fields = ptr->jsonFields();
-        BaseType* raw = [&]() -> BaseType* {
-            if constexpr (std::is_same_v<ValueType, BaseType*>) {
-                return ptr;
-            } else {
-                return ptr.get();
-            }
-        }();
-        fields.writeFieldsOnly(writer, raw);
+        fields.writeFieldsOnly(writer, std::to_address(ptr));
         writer.endObject();
     }
 
@@ -389,14 +379,7 @@ struct JsonPolymorphicArrayField : JsonField<MemberPtrType> {
             writer.key(jsonKey_);
             writer.writeObject(typeName);
             auto& fields = ptr->jsonFields();
-            BaseType* raw = [&]() -> BaseType* {
-                if constexpr (std::is_same_v<ElementPtrType, BaseType*>) {
-                    return ptr;
-                } else {
-                    return ptr.get();
-                }
-            }();
-            fields.writeFieldsOnly(writer, raw);
+            fields.writeFieldsOnly(writer, std::to_address(ptr));
             writer.endObject();
         }
         writer.endArray();
