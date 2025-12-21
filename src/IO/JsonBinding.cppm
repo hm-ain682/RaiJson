@@ -148,7 +148,18 @@ private:
         writer.endArray();
     }
 
-    // unique_ptr型
+    // unique_ptr型（基本型などの場合）
+    template <typename T>
+    requires (!HasJsonFields<T>)
+    void writeObject(JsonWriter& writer, const std::unique_ptr<T>& ptr) const {
+        if (ptr) {
+            writeObject(writer, *ptr);
+        } else {
+            writer.null();
+        }
+    }
+
+    // unique_ptr型（HasJsonFieldsを満たす場合）
     template <HasJsonFields T>
     void writeObject(JsonWriter& writer, const std::unique_ptr<T>& ptr) const {
         if (ptr) {
