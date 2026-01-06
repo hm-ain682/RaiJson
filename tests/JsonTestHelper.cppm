@@ -20,7 +20,7 @@ export namespace rai::json::test {
 ///       3. そのJSONを読み込んでオブジェクトを構築
 ///       4. 元のオブジェクトと内容が一致していることを確認
 template <typename T>
-    requires HasJsonFields<T> &&
+    requires (HasJsonFields<T> || HasReadJson<T>) &&
              requires(const T& a, const T& b) { { a.equals(b) } -> std::convertible_to<bool>; }
 void testJsonRoundTrip(const T& original, const std::string& expectedJson) {
     // JSON形式で書き出す
