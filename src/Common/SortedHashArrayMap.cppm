@@ -48,8 +48,19 @@ template <typename KeyType, typename ValueType>
 struct MapEntry {
     KeyType key;                ///< フィールドのキー。
     ValueType value;            ///< フィールドの値。
-    std::size_t hash;           ///< キーから計算したハッシュ値（Hash の結果）。
-    std::size_t originalIndex;  ///< 元のフィールド定義順序。
+    std::size_t hash = 0;       ///< キーから計算したハッシュ値（Hash の結果）。
+    std::size_t originalIndex = 0; ///< 元のフィールド定義順序。
+
+    /// @brief 引数付きコンストラクタ。
+    /// @param k キー。
+    /// @param v 値。
+    /// @param h ハッシュ値。
+    /// @param idx 元インデックス。
+    constexpr MapEntry(KeyType k, ValueType v, std::size_t h, std::size_t idx)
+        : key(std::move(k)), value(std::move(v)), hash(h), originalIndex(idx) {}
+
+    /// @brief デフォルトコンストラクタ（KeyTypeがデフォルト構築可能な場合のみ）。
+    constexpr MapEntry() requires std::is_default_constructible_v<KeyType> = default;
 };
 
 template <
@@ -205,10 +216,11 @@ class SortedHashArrayMap {
 public:
     using FieldInfo = MapEntry<KeyType, ValueType>;
     using FieldInfoArrayType = std::array<FieldInfo, N>;
+    using Array = FieldInfoArrayType;
     using Algorithms = SortedHashArrayMapAlgorithms<KeyType, ValueType, Traits>;
 
-    /// @brief デフォルトコンストラクタ。
-    constexpr SortedHashArrayMap() = default;
+    /// @brief デフォルトコンストラクタ（KeyTypeがデフォルト構築可能な場合のみ）。
+    constexpr SortedHashArrayMap() requires std::is_default_constructible_v<KeyType> = default;
 
     /// @brief フィールド情報を受け取るテンプレートコンストラクタ。
     /// @tparam Fields フィールド型のパラメータパック。
@@ -216,31 +228,26 @@ public:
     /// @note フィールド情報を配列に詰めて、ハッシュ値でソートする。
     template <typename... Fields>
         requires (IsKeyValuePair<KeyType, ValueType, Fields> && ...)
-    constexpr explicit SortedHashArrayMap(const Fields&... fields) {
+    constexpr explicit SortedHashArrayMap(const Fields&... fields)
+        : sortedFields_(makeFieldInfoArrayFromPack(
+            std::make_index_sequence<N>{}, fields...)) {
         static_assert(sizeof...(Fields) == N, "SortedHashArrayMap: number of fields must equal N");
-        std::size_t i = 0;
-        ((sortedFields_[i] = FieldInfo{
-            static_cast<KeyType>(fields.first),
-            static_cast<ValueType>(fields.second),
-            Hash{}(fields.first),
-            i
-        }, ++i), ...);
         sortFields();
     }
 
     // Construct from a std::array of field-descriptor-like objects (size must match N)
     template <typename FieldT>
         requires IsKeyValuePair<KeyType, ValueType, FieldT>
-    constexpr explicit SortedHashArrayMap(const std::array<FieldT, N>& arr) {
-        fillFromRange(arr.begin(), arr.end());
+    constexpr explicit SortedHashArrayMap(const std::array<FieldT, N>& arr)
+        : sortedFields_(makeFieldInfoArray(arr, std::make_index_sequence<N>{})) {
         sortFields();
     }
 
     // Construct from a C-style array: foo arr[M]
     template <typename FieldT>
         requires IsKeyValuePair<KeyType, ValueType, FieldT>
-    constexpr explicit SortedHashArrayMap(const FieldT (&arr)[N]) {
-        fillFromRange(std::begin(arr), std::end(arr));
+    constexpr explicit SortedHashArrayMap(const FieldT (&arr)[N])
+        : sortedFields_(makeFieldInfoArrayFromCArray(arr, std::make_index_sequence<N>{})) {
         sortFields();
     }
 
@@ -259,23 +266,60 @@ public:
     }
 
 private:
-    /// @brief フィールド情報を初期化する。
-    /// @tparam Fields フィールドの型パラメータパック。
+    /// @brief std::arrayからFieldInfo配列を構築する。
+    /// @tparam FieldT フィールドの型。
+    /// @tparam Is インデックスシーケンス。
+    /// @param arr ソース配列。
+    /// @return FieldInfo配列。
+    template <typename FieldT, std::size_t... Is>
+    static constexpr Array makeFieldInfoArray(
+        const std::array<FieldT, N>& arr, std::index_sequence<Is...>) {
+        return Array{{
+            FieldInfo{
+                static_cast<KeyType>(arr[Is].first),
+                static_cast<ValueType>(arr[Is].second),
+                Hash{}(arr[Is].first),
+                Is
+            }...
+        }};
+    }
+
+    /// @brief C配列からFieldInfo配列を構築する。
+    /// @tparam FieldT フィールドの型。
+    /// @tparam Is インデックスシーケンス。
+    /// @param arr ソース配列。
+    /// @return FieldInfo配列。
+    template <typename FieldT, std::size_t... Is>
+    static constexpr Array makeFieldInfoArrayFromCArray(
+        const FieldT (&arr)[N], std::index_sequence<Is...>) {
+        return Array{{
+            FieldInfo{
+                static_cast<KeyType>(arr[Is].first),
+                static_cast<ValueType>(arr[Is].second),
+                Hash{}(arr[Is].first),
+                Is
+            }...
+        }};
+    }
+
+    /// @brief パラメータパックからFieldInfo配列を構築する。
+    /// @tparam Is インデックスシーケンス。
+    /// @tparam Fields フィールド型のパラメータパック。
     /// @param fields フィールド定義群。
-    /// @note フィールド情報を配列に詰めて、ハッシュ値でソートする。
-    template <typename Iter>
-        requires IsKeyValuePair<KeyType, ValueType, std::remove_cvref_t<decltype(*std::declval<Iter>())>>
-    constexpr void fillFromRange(Iter begin, Iter end) {
-        std::size_t i = 0;
-        for (; begin != end; ++begin, ++i) {
-            const auto& f = *begin;
-            sortedFields_[i] = {
-                static_cast<KeyType>(f.first),
-                static_cast<ValueType>(f.second),
-                Hash{}(f.first),
-                i
-            };
-        }
+    /// @return FieldInfo配列。
+    template <std::size_t... Is, typename... Fields>
+    static constexpr Array makeFieldInfoArrayFromPack(
+        std::index_sequence<Is...>, const Fields&... fields) {
+        // 一度タプルに格納してインデックスでアクセス
+        auto tuple = std::forward_as_tuple(fields...);
+        return Array{{
+            FieldInfo{
+                static_cast<KeyType>(std::get<Is>(tuple).first),
+                static_cast<ValueType>(std::get<Is>(tuple).second),
+                Hash{}(std::get<Is>(tuple).first),
+                Is
+            }...
+        }};
     }
 
     /// @brief sortedFields_をソートする。
@@ -289,14 +333,13 @@ private:
             });
     }
 
+    Array sortedFields_; ///< ハッシュ順に整列したフィールド情報。
+
 public:
-    using Array = std::array<FieldInfo, N>;
     using iterator = const FieldInfo*;
     using value_type = FieldInfo;
     iterator begin() const { return sortedFields_.data(); }
     iterator end() const { return sortedFields_.data() + N; }
-private:
-    Array sortedFields_{}; ///< ハッシュ順に整列したフィールド情報。
 };
 
 template <typename First, typename... Fields>

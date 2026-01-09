@@ -408,4 +408,78 @@ private:
     const char* jsonKey_;
 };
 
+// ******************************************************************************** トークン種別ディスパッチフィールド
+
+/// @brief JsonTokenType の総数。
+export inline constexpr std::size_t JsonTokenTypeCount = 12;
+
+/// @brief JSONからの読み取り用エントリ。
+/// @tparam ValueType 変換対象の値型。
+export template <typename ValueType>
+struct FromJsonEntry {
+    JsonTokenType tokenType;                          ///< 対象のトークン種別。
+    std::function<ValueType(JsonParser&)> converter;  ///< 読み取り関数。
+};
+
+/// @brief JSONトークン種別に応じて変換処理を切り替えるフィールド。
+/// @tparam MemberPtrType メンバー変数へのポインタ型。
+/// @details fromJsonでは次のトークン種別に対応するコンバータを使用して値を読み取る。
+///          toJsonでは指定されたコンバータを使用して書き出す。
+export template <typename MemberPtrType>
+struct JsonTokenDispatchField : JsonField<MemberPtrType> {
+    using Base = JsonField<MemberPtrType>;
+    using typename Base::ValueType;
+    using ToConverter = std::function<void(JsonWriter&, const ValueType&)>;
+
+    /// @brief コンストラクタ。
+    /// @param memberPtr メンバーポインタ。
+    /// @param keyName JSONキー名。
+    /// @param fromEntries トークン種別順に並んだ読み取りエントリ配列（要素数はJsonTokenTypeCount以下）。
+    /// @param toConverter 書き出し用コンバータ関数。
+    /// @param req 必須フィールドかどうか。
+    template <std::size_t FromN>
+    explicit JsonTokenDispatchField(MemberPtrType memberPtr, const char* keyName,
+        const std::array<FromJsonEntry<ValueType>, FromN>& fromEntries,
+        ToConverter toConverter,
+        bool req = false)
+        : Base(memberPtr, keyName, req), toConverter_(std::move(toConverter)) {
+        static_assert(FromN <= JsonTokenTypeCount);
+        // まず全要素を例外を投げる関数で初期化
+        for (std::size_t i = 0; i < JsonTokenTypeCount; ++i) {
+            fromEntries_[i] = [](JsonParser&) -> ValueType {
+                throw std::runtime_error("No converter found for token type");
+            };
+        }
+        // fromEntriesの各エントリをtokenTypeに基づいて設定
+        for (std::size_t i = 0; i < FromN; ++i) {
+            std::size_t index = static_cast<std::size_t>(fromEntries[i].tokenType);
+            fromEntries_[index] = fromEntries[i].converter;
+        }
+    }
+
+    /// @brief JSONから値を読み取る。
+    /// @param parser JsonParserの参照。
+    /// @return 読み取った値。
+    /// @throws std::runtime_error 対応するコンバータが見つからない場合。
+    ValueType fromJson(JsonParser& parser) const {
+        // トークン種別をインデックスとして直接アクセス
+        std::size_t index = static_cast<std::size_t>(parser.nextTokenType());
+        return fromEntries_[index](parser);
+    }
+
+    /// @brief JSONに値を書き出す。
+    /// @param writer JsonWriterの参照。
+    /// @param value 書き出す値。
+    void toJson(JsonWriter& writer, const ValueType& value) const {
+        toConverter_(writer, value);
+    }
+
+private:
+    /// @brief トークン種別順に並んだ読み取り関数配列。
+    std::array<std::function<ValueType(JsonParser&)>, JsonTokenTypeCount> fromEntries_{};
+
+    /// @brief 書き出し用コンバータ関数。
+    ToConverter toConverter_;
+};
+
 }  // namespace rai::json

@@ -1,13 +1,17 @@
 import rai.json.json_field;
 import rai.json.json_writer;
+import rai.json.json_parser;
 import rai.json.json_binding;
 import rai.json.json_io;
 import rai.json.test_helper;
+import rai.json.json_token_manager;
 import rai.collection.sorted_hash_array_map;
 #include <gtest/gtest.h>
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <variant>
+#include <array>
 
 using namespace rai::json;
 using namespace rai::json::test;
@@ -480,3 +484,104 @@ TEST(JsonPointerTest, ReadWriteRoundTrip) {
 
     testJsonRoundTrip(original, "{ptr:999,ptrVec:[\"first\",null,\"third\"]}");
 }
+
+// ********************************************************************************
+// テストカテゴリ：トークン種別ディスパッチフィールド
+// ********************************************************************************
+
+/// @brief トークン種別ディスパッチフィールド用の値型。
+/// @details 文字列、整数、真偽値のいずれかを保持する。
+struct DispatchValue {
+    std::variant<std::string, int64_t, bool> data;
+
+    /// @brief 他インスタンスとの同値判定。
+    /// @param other 比較対象。
+    /// @return 同値ならtrue。
+    bool operator==(const DispatchValue& other) const {
+        return data == other.data;
+    }
+};
+
+/// @brief トークン種別ディスパッチフィールドを含む構造体。
+struct TokenDispatchHolder {
+    DispatchValue value;
+
+    /// @brief JSONからの読み取り用エントリ配列を取得する。
+    /// @return FromJsonEntryの配列。
+    static const auto& getFromEntries() {
+        using V = DispatchValue;
+        static const std::array<FromJsonEntry<V>, JsonTokenTypeCount> entries = {{
+            { JsonTokenType::EndOfStream, nullptr },
+            { JsonTokenType::Null, nullptr },
+            { JsonTokenType::Bool, [](JsonParser& p) -> V {
+                bool b; p.readTo(b); return V{ b };
+            }},
+            { JsonTokenType::Integer, [](JsonParser& p) -> V {
+                int64_t i; p.readTo(i); return V{ i };
+            }},
+            { JsonTokenType::Number, nullptr },
+            { JsonTokenType::String, [](JsonParser& p) -> V {
+                std::string s; p.readTo(s); return V{ s };
+            }},
+            { JsonTokenType::Key, nullptr },
+            { JsonTokenType::StartObject, nullptr },
+            { JsonTokenType::EndObject, nullptr },
+            { JsonTokenType::StartArray, nullptr },
+            { JsonTokenType::EndArray, nullptr },
+        }};
+        return entries;
+    }
+
+    /// @brief JSONへの書き出し用コンバータ関数。
+    /// @param w JsonWriterの参照。
+    /// @param v 書き出す値。
+    static void toConverter(JsonWriter& w, const DispatchValue& v) {
+        std::visit([&w](const auto& val) {
+            w.writeObject(val);
+        }, v.data);
+    }
+
+    const IJsonFieldSet& jsonFields() const {
+        static const auto fields = makeJsonFieldSet<TokenDispatchHolder>(
+            JsonTokenDispatchField<decltype(&TokenDispatchHolder::value)>(
+                &TokenDispatchHolder::value, "value", getFromEntries(), toConverter)
+        );
+        return fields;
+    }
+
+    /// @brief 他インスタンスとの同値判定。
+    /// @param other 比較対象。
+    /// @return 同値ならtrue。
+    bool equals(const TokenDispatchHolder& other) const {
+        return value == other.value;
+    }
+};
+
+/// @brief トークンディスパッチフィールドの文字列読み書きテスト。
+TEST(JsonTokenDispatchTest, ReadWriteString) {
+    TokenDispatchHolder original;
+    original.value.data = std::string("hello");
+    testJsonRoundTrip(original, "{value:\"hello\"}");
+}
+
+/// @brief トークンディスパッチフィールドの整数読み書きテスト。
+TEST(JsonTokenDispatchTest, ReadWriteInteger) {
+    TokenDispatchHolder original;
+    original.value.data = int64_t(42);
+    testJsonRoundTrip(original, "{value:42}");
+}
+
+/// @brief トークンディスパッチフィールドの真偽値読み書きテスト。
+TEST(JsonTokenDispatchTest, ReadWriteBool) {
+    TokenDispatchHolder original;
+    original.value.data = true;
+    testJsonRoundTrip(original, "{value:true}");
+}
+
+/// @brief トークンディスパッチフィールドの偽値読み書きテスト。
+TEST(JsonTokenDispatchTest, ReadWriteFalse) {
+    TokenDispatchHolder original;
+    original.value.data = false;
+    testJsonRoundTrip(original, "{value:false}");
+}
+
