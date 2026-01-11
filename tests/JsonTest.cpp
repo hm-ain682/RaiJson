@@ -12,6 +12,7 @@ import rai.collection.sorted_hash_array_map;
 #include <tuple>
 #include <variant>
 #include <array>
+#include <set>
 
 using namespace rai::json;
 using namespace rai::json::test;
@@ -673,4 +674,221 @@ TEST(HasReadWriteJsonTest, RoundTrip) {
     original.value = 42;
     original.name = "test";
     testJsonRoundTrip(original, "{value:42,name:\"test\"}");
+}
+
+// ********************************************************************************
+// テストカテゴリ：JsonSetField
+// ********************************************************************************
+
+/// @brief JsonSetFieldのテスト用の単純なカスタム型。
+struct Tag {
+    std::string label;
+    int priority = 0;
+
+    /// @brief 他インスタンスとの同値判定。
+    /// @param other 比較対象。
+    /// @return 同値ならtrue。
+    bool operator==(const Tag& other) const {
+        return label == other.label && priority == other.priority;
+    }
+};
+
+/// @brief JsonSetFieldをvectorで使用するテスト用構造体。
+struct SetFieldVectorHolder {
+    std::vector<Tag> tags;
+
+    const IJsonFieldSet& jsonFields() const {
+        static const auto fields = makeJsonFieldSet<SetFieldVectorHolder>(
+            makeJsonSetField(
+                &SetFieldVectorHolder::tags, "tags",
+                // コンテナに要素を追加するファンクタ
+                [](std::vector<Tag>& container, Tag elem) {
+                    container.push_back(std::move(elem));
+                },
+                // 要素を読み取るファンクタ
+                [](JsonParser& parser) -> Tag {
+                    Tag tag;
+                    parser.startObject();
+                    while (!parser.nextIsEndObject()) {
+                        auto key = parser.nextKey();
+                        if (key == "label") {
+                            parser.readTo(tag.label);
+                        }
+                        else if (key == "priority") {
+                            parser.readTo(tag.priority);
+                        }
+                        else {
+                            parser.skipValue();
+                        }
+                    }
+                    parser.endObject();
+                    return tag;
+                },
+                // 要素を書き出すファンクタ
+                [](JsonWriter& writer, const Tag& elem) {
+                    writer.startObject();
+                    writer.key("label");
+                    writer.writeObject(elem.label);
+                    writer.key("priority");
+                    writer.writeObject(elem.priority);
+                    writer.endObject();
+                }
+            )
+        );
+        return fields;
+    }
+
+    /// @brief 他インスタンスとの同値判定。
+    /// @param other 比較対象。
+    /// @return 同値ならtrue。
+    bool equals(const SetFieldVectorHolder& other) const {
+        return tags == other.tags;
+    }
+};
+
+/// @brief JsonSetFieldのvectorでの読み書きテスト。
+TEST(JsonSetFieldTest, VectorReadWriteRoundTrip) {
+    SetFieldVectorHolder original;
+    original.tags = {{"first", 1}, {"second", 2}, {"third", 3}};
+    testJsonRoundTrip(original,
+        "{tags:[{label:\"first\",priority:1},{label:\"second\",priority:2},"
+        "{label:\"third\",priority:3}]}");
+}
+
+/// @brief JsonSetFieldの空vectorでの読み書きテスト。
+TEST(JsonSetFieldTest, VectorEmptyReadWriteRoundTrip) {
+    SetFieldVectorHolder original;
+    original.tags = {};
+    testJsonRoundTrip(original, "{tags:[]}");
+}
+
+/// @brief JsonSetFieldをstd::setで使用するテスト用構造体。
+struct SetFieldSetHolder {
+    std::set<std::string> tags;
+
+    const IJsonFieldSet& jsonFields() const {
+        static const auto fields = makeJsonFieldSet<SetFieldSetHolder>(
+            makeJsonSetField(
+                &SetFieldSetHolder::tags, "tags",
+                // コンテナに要素を追加するファンクタ（std::set用）
+                [](std::set<std::string>& container, std::string elem) {
+                    container.insert(std::move(elem));
+                },
+                // 要素を読み取るファンクタ
+                [](JsonParser& parser) -> std::string {
+                    std::string value;
+                    parser.readTo(value);
+                    return value;
+                },
+                // 要素を書き出すファンクタ
+                [](JsonWriter& writer, const std::string& elem) {
+                    writer.writeObject(elem);
+                }
+            )
+        );
+        return fields;
+    }
+
+    /// @brief 他インスタンスとの同値判定。
+    /// @param other 比較対象。
+    /// @return 同値ならtrue。
+    bool equals(const SetFieldSetHolder& other) const {
+        return tags == other.tags;
+    }
+};
+
+/// @brief JsonSetFieldのstd::setでの読み書きテスト。
+TEST(JsonSetFieldTest, SetReadWriteRoundTrip) {
+    SetFieldSetHolder original;
+    original.tags = {"alpha", "beta", "gamma"};
+    // std::setはソートされるため、出力順序もソート済み
+    testJsonRoundTrip(original, "{tags:[\"alpha\",\"beta\",\"gamma\"]}");
+}
+
+/// @brief JsonSetFieldの空std::setでの読み書きテスト。
+TEST(JsonSetFieldTest, SetEmptyReadWriteRoundTrip) {
+    SetFieldSetHolder original;
+    original.tags = {};
+    testJsonRoundTrip(original, "{tags:[]}");
+}
+
+/// @brief JsonSetFieldを複雑な要素型（オブジェクト）で使用するテスト用構造体。
+struct Point {
+    int x = 0;
+    int y = 0;
+
+    const IJsonFieldSet& jsonFields() const {
+        static const auto fields = makeJsonFieldSet<Point>(
+            JsonField(&Point::x, "x"),
+            JsonField(&Point::y, "y")
+        );
+        return fields;
+    }
+
+    /// @brief 他インスタンスとの同値判定。
+    /// @param other 比較対象。
+    /// @return 同値ならtrue。
+    bool operator==(const Point& other) const {
+        return x == other.x && y == other.y;
+    }
+};
+
+/// @brief JsonSetFieldを複雑な要素型で使用するテスト用構造体。
+struct SetFieldObjectHolder {
+    std::vector<Point> points;
+
+    const IJsonFieldSet& jsonFields() const {
+        static const auto fields = makeJsonFieldSet<SetFieldObjectHolder>(
+            makeJsonSetField(
+                &SetFieldObjectHolder::points, "points",
+                // コンテナに要素を追加するファンクタ
+                [](std::vector<Point>& container, Point elem) {
+                    container.push_back(std::move(elem));
+                },
+                // 要素を読み取るファンクタ（オブジェクト型の読み込み）
+                [](JsonParser& parser) -> Point {
+                    Point point;
+                    parser.startObject();
+                    while (!parser.nextIsEndObject()) {
+                        auto key = parser.nextKey();
+                        if (key == "x") {
+                            parser.readTo(point.x);
+                        }
+                        else if (key == "y") {
+                            parser.readTo(point.y);
+                        }
+                        else {
+                            parser.skipValue();
+                        }
+                    }
+                    parser.endObject();
+                    return point;
+                },
+                // 要素を書き出すファンクタ（オブジェクト型の書き込み）
+                [](JsonWriter& writer, const Point& elem) {
+                    writer.startObject();
+                    writer.key("x");
+                    writer.writeObject(elem.x);
+                    writer.key("y");
+                    writer.writeObject(elem.y);
+                    writer.endObject();
+                }
+            )
+        );
+        return fields;
+    }
+
+    /// @brief 他インスタンスとの同値判定。
+    /// @param other 比較対象。
+    /// @return 同値ならtrue。
+    bool equals(const SetFieldObjectHolder& other) const {
+        return points == other.points;
+    }
+};
+
+/// @brief JsonSetFieldの複雑な要素型での読み書きテスト。
+TEST(JsonSetFieldTest, ObjectElementReadWriteRoundTrip) {
+    SetFieldObjectHolder original;
+    original.points = {{1, 2}, {3, 4}, {5, 6}};
+    testJsonRoundTrip(original, "{points:[{x:1,y:2},{x:3,y:4},{x:5,y:6}]}");
 }

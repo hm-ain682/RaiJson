@@ -330,32 +330,136 @@ private:
     const char* jsonKey_;
 };
 
+/// @brief 配列形式のJSONを読み書きするための汎用フィールド。
+/// @tparam MemberPtrType コンテナ型のメンバー変数へのポインタ。
+/// @tparam AddElementType コンテナに要素を追加するファンクタ型。
+/// @tparam ReadElementType 要素を読み取るファンクタ型。
+/// @tparam WriteElementType 要素を書き出すファンクタ型。
+/// @details fromJson/toJsonにおける要素の読み書き方法をカスタマイズ可能。
+///          vector以外のコンテナにも対応できる汎用設計。
+export template <typename MemberPtrType, typename AddElementType, typename ReadElementType,
+    typename WriteElementType>
+    requires std::ranges::range<typename JsonField<MemberPtrType>::ValueType>
+struct JsonSetField : JsonField<MemberPtrType> {
+    using Base = JsonField<MemberPtrType>;
+    using typename Base::ValueType;
+    using ElementType = std::ranges::range_value_t<ValueType>; ///< コンテナの要素型。
+
+    /// @brief コンストラクタ。
+    /// @param memberPtr メンバーポインタ。
+    /// @param keyName JSONキー名。
+    /// @param addElement コンテナに要素を追加するファンクタ。
+    /// @param readElement 要素を読み取るファンクタ。
+    /// @param writeElement 要素を書き出すファンクタ。
+    /// @param req 必須フィールドかどうか。
+    constexpr explicit JsonSetField(MemberPtrType memberPtr, const char* keyName,
+        AddElementType addElement, ReadElementType readElement,
+        WriteElementType writeElement, bool req = false)
+        : Base(memberPtr, keyName, req),
+          addElement_(std::move(addElement)),
+          readElement_(std::move(readElement)),
+          writeElement_(std::move(writeElement)) {}
+
+    /// @brief JsonParser から配列を読み込む。
+    /// @param parser JsonParser の参照。現在の位置に配列があることを期待する。
+    /// @return 読み込まれたコンテナ。
+    ValueType fromJson(JsonParser& parser) const {
+        ValueType out{};
+        parser.startArray();
+        while (!parser.nextIsEndArray()) {
+            auto elem = readElement_(parser);
+            addElement_(out, std::move(elem));
+        }
+        parser.endArray();
+        return out;
+    }
+
+    /// @brief JsonWriter に対して配列を書き出す。
+    /// @param writer JsonWriter の参照。
+    /// @param container 書き込み対象のコンテナ。
+    void toJson(JsonWriter& writer, const ValueType& container) const {
+        writer.startArray();
+        for (const auto& elem : container) {
+            writeElement_(writer, elem);
+        }
+        writer.endArray();
+    }
+
+private:
+    AddElementType addElement_;    ///< コンテナに要素を追加するファンクタ。
+    ReadElementType readElement_;  ///< 要素を読み取るファンクタ。
+    WriteElementType writeElement_;  ///< 要素を書き出すファンクタ。
+};
+
+/// @brief JsonSetFieldを生成するヘルパー関数。
+/// @tparam MemberPtrType メンバーポインタ型（自動推論）。
+/// @tparam AddElementType コンテナに要素を追加するファンクタ型（自動推論）。
+/// @tparam ReadElementType 要素を読み取るファンクタ型（自動推論）。
+/// @tparam WriteElementType 要素を書き出すファンクタ型（自動推論）。
+/// @param memberPtr メンバーポインタ。
+/// @param keyName JSONキー名。
+/// @param addElement コンテナに要素を追加するファンクタ。
+/// @param readElement 要素を読み取るファンクタ。
+/// @param writeElement 要素を書き出すファンクタ。
+/// @param req 必須フィールドかどうか。
+/// @return 生成されたJsonSetField。
+export template <typename MemberPtrType, typename AddElementType, typename ReadElementType,
+    typename WriteElementType>
+constexpr auto makeJsonSetField(MemberPtrType memberPtr, const char* keyName,
+    AddElementType addElement, ReadElementType readElement,
+    WriteElementType writeElement, bool req = false) {
+    return JsonSetField<MemberPtrType, std::remove_cvref_t<AddElementType>,
+        std::remove_cvref_t<ReadElementType>, std::remove_cvref_t<WriteElementType>>(
+        memberPtr, keyName, std::move(addElement), std::move(readElement),
+        std::move(writeElement), req);
+}
+
 /// @brief ポリモーフィックな配列（vector<std::unique_ptr<BaseType>>）用のフィールド。
+/// @tparam MemberPtrType ポインタのvector型のメンバー変数へのポインタ。
+/// @details JsonSetFieldを継承し、ポリモーフィック型用のデフォルト動作を提供する。
 export template <typename MemberPtrType>
     requires VectorOfPointers<typename JsonField<MemberPtrType>::ValueType>
 struct JsonPolymorphicArrayField : JsonField<MemberPtrType> {
     using Base = JsonField<MemberPtrType>;
     using typename Base::ValueType;
-    using ElementPtrType = typename ValueType::value_type; // std::unique_ptr<T>, std::shared_ptr<T>, or T*
+    using ElementPtrType = typename ValueType::value_type; ///< std::unique_ptr<T>, std::shared_ptr<T>, or T*
     using BaseType = typename PointerElementType<ElementPtrType>::type;
     using Key = std::string_view;
     using Value = PolymorphicTypeFactory<ElementPtrType>;
     using Map = collection::MapReference<Key, Value>;
 
+    /// @brief コンストラクタ。
+    /// @param memberPtr メンバーポインタ。
+    /// @param keyName JSONキー名。
+    /// @param entries 型名とファクトリ関数のマッピング。
+    /// @param jsonKey JSON内で型を判別するためのキー名。
+    /// @param req 必須フィールドかどうか。
     constexpr explicit JsonPolymorphicArrayField(MemberPtrType memberPtr, const char* keyName,
         Map entries, const char* jsonKey = "type", bool req = true)
         : Base(memberPtr, keyName, req), nameToEntry_(entries), jsonKey_(jsonKey) {}
 
+    /// @brief コンストラクタ（SortedHashArrayMap版）。
+    /// @param memberPtr メンバーポインタ。
+    /// @param keyName JSONキー名。
+    /// @param entries 型名とファクトリ関数のマッピング（SortedHashArrayMap）。
+    /// @param jsonKey JSON内で型を判別するためのキー名。
+    /// @param req 必須フィールドかどうか。
     template <size_t N, typename Traits>
     constexpr explicit JsonPolymorphicArrayField(MemberPtrType memberPtr, const char* keyName,
         const collection::SortedHashArrayMap<Key, Value, N, Traits>& entries,
         const char* jsonKey = "type", bool req = true)
         : Base(memberPtr, keyName, req), nameToEntry_(Map(entries)), jsonKey_(jsonKey) {}
 
+    /// @brief 型名から対応するファクトリ関数を検索する。
+    /// @param typeName 検索する型名。
+    /// @return 見つかった場合はファクトリ関数へのポインタ、見つからない場合はnullptr。
     const PolymorphicTypeFactory<ElementPtrType>* findEntry(std::string_view typeName) const {
         return nameToEntry_.findValue(typeName);
     }
 
+    /// @brief オブジェクトから型名を取得する。
+    /// @param obj 対象オブジェクト。
+    /// @return 型名。見つからない場合は例外を投げる。
     std::string getTypeName(const BaseType& obj) const {
         bool found = false;
         std::string result;
@@ -368,7 +472,9 @@ struct JsonPolymorphicArrayField : JsonField<MemberPtrType> {
                 }
             }
         }
-        if (found) return result;
+        if (found) {
+            return result;
+        }
         throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeid(obj).name());
     }
 
@@ -409,10 +515,9 @@ struct JsonPolymorphicArrayField : JsonField<MemberPtrType> {
     }
 
 private:
-    Map nameToEntry_;
+    Map nameToEntry_; ///< 型名からファクトリ関数へのマッピング。
 
-    //! JSON 内で型を判別するためのキー名
-    const char* jsonKey_;
+    const char* jsonKey_; ///< JSON内で型を判別するためのキー名。
 };
 
 // ******************************************************************************** トークン種別ディスパッチフィールド
