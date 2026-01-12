@@ -509,26 +509,22 @@ struct TokenDispatchHolder {
 
     /// @brief JSONからの読み取り用エントリ配列を取得する。
     /// @return FromJsonEntryの配列。
+    /// @note 配列添え字がJsonTokenTypeに対応する。
     static const auto& getFromEntries() {
         using V = DispatchValue;
         static const std::array<FromJsonEntry<V>, JsonTokenTypeCount> entries = {{
-            { JsonTokenType::EndOfStream, nullptr },
-            { JsonTokenType::Null, nullptr },
-            { JsonTokenType::Bool, [](JsonParser& p) -> V {
-                bool b; p.readTo(b); return V{ b };
-            }},
-            { JsonTokenType::Integer, [](JsonParser& p) -> V {
-                int64_t i; p.readTo(i); return V{ i };
-            }},
-            { JsonTokenType::Number, nullptr },
-            { JsonTokenType::String, [](JsonParser& p) -> V {
-                std::string s; p.readTo(s); return V{ s };
-            }},
-            { JsonTokenType::Key, nullptr },
-            { JsonTokenType::StartObject, nullptr },
-            { JsonTokenType::EndObject, nullptr },
-            { JsonTokenType::StartArray, nullptr },
-            { JsonTokenType::EndArray, nullptr },
+            nullptr,  // EndOfStream
+            nullptr,  // Null
+            [](JsonParser& p) -> V { bool b; p.readTo(b); return V{ b }; },  // Bool
+            [](JsonParser& p) -> V { int64_t i; p.readTo(i); return V{ i }; },  // Integer
+            nullptr,  // Number
+            [](JsonParser& p) -> V { std::string s; p.readTo(s); return V{ s }; },  // String
+            nullptr,  // Key
+            nullptr,  // StartObject
+            nullptr,  // EndObject
+            nullptr,  // StartArray
+            nullptr,  // EndArray
+            nullptr,  // Error
         }};
         return entries;
     }

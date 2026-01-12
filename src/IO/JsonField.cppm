@@ -580,13 +580,11 @@ private:
 /// @note この値はJsonTokenType enumの要素数と一致している必要がある。
 export inline constexpr std::size_t JsonTokenTypeCount = 12;
 
-/// @brief JSONからの読み取り用エントリ。
+/// @brief JSONからの読み取り用コンバータ型。
 /// @tparam ValueType 変換対象の値型。
+/// @note 配列添え字がJsonTokenTypeに対応する。
 export template <typename ValueType>
-struct FromJsonEntry {
-    JsonTokenType tokenType;                          ///< 対象のトークン種別。
-    std::function<ValueType(JsonParser&)> converter;  ///< 読み取り関数。
-};
+using FromJsonEntry = std::function<ValueType(JsonParser&)>;
 
 /// @brief JSONトークン種別に応じて変換処理を切り替えるフィールド。
 /// @tparam MemberPtrType メンバー変数へのポインタ型。
@@ -601,9 +599,10 @@ struct JsonTokenDispatchField : JsonField<MemberPtrType> {
     /// @brief コンストラクタ。
     /// @param memberPtr メンバーポインタ。
     /// @param keyName JSONキー名。
-    /// @param fromEntries トークン種別順に並んだ読み取りエントリ配列（要素数はJsonTokenTypeCount以下）。
+    /// @param fromEntries トークン種別をインデックスとする読み取りコンバータ配列（要素数はJsonTokenTypeCount以下）。
     /// @param toConverter 書き出し用コンバータ関数。
     /// @param req 必須フィールドかどうか。
+    /// @note fromEntries[i]はJsonTokenType(i)に対応するコンバータ。対応しないインデックスにはnullptrを設定可能。
     template <std::size_t FromN>
     explicit JsonTokenDispatchField(MemberPtrType memberPtr, const char* keyName,
         const std::array<FromJsonEntry<ValueType>, FromN>& fromEntries,
@@ -617,10 +616,11 @@ struct JsonTokenDispatchField : JsonField<MemberPtrType> {
                 throw std::runtime_error("No converter found for token type");
             };
         }
-        // fromEntriesの各エントリをtokenTypeに基づいて設定
+        // fromEntriesの有効なエントリをコピー（配列添え字＝トークン種別）
         for (std::size_t i = 0; i < FromN; ++i) {
-            std::size_t index = static_cast<std::size_t>(fromEntries[i].tokenType);
-            fromEntries_[index] = fromEntries[i].converter;
+            if (fromEntries[i]) {
+                fromEntries_[i] = fromEntries[i];
+            }
         }
     }
 
