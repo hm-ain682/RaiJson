@@ -600,13 +600,13 @@ struct JsonTokenDispatchField : JsonField<MemberPtrType> {
     /// @param memberPtr メンバーポインタ。
     /// @param keyName JSONキー名。
     /// @param fromEntries トークン種別をインデックスとする読み取りコンバータ配列（要素数はJsonTokenTypeCount以下）。
-    /// @param toConverter 書き出し用コンバータ関数。
+    /// @param toConverter 書き出し用コンバータ関数。省略時はJsonWriter::writeObjectで書き出す。
     /// @param req 必須フィールドかどうか。
     /// @note fromEntries[i]はJsonTokenType(i)に対応するコンバータ。対応しないインデックスにはnullptrを設定可能。
     template <std::size_t FromN>
     explicit JsonTokenDispatchField(MemberPtrType memberPtr, const char* keyName,
         const std::array<FromJsonEntry<ValueType>, FromN>& fromEntries,
-        ToConverter toConverter,
+        ToConverter toConverter = defaultToConverter(),
         bool req = false)
         : Base(memberPtr, keyName, req), toConverter_(std::move(toConverter)) {
         static_assert(FromN <= JsonTokenTypeCount);
@@ -639,6 +639,20 @@ struct JsonTokenDispatchField : JsonField<MemberPtrType> {
     /// @param value 書き出す値。
     void toJson(JsonWriter& writer, const ValueType& value) const {
         toConverter_(writer, value);
+    }
+
+    /// @brief 書き出し用コンバータを設定する。
+    /// @param toConverter 設定するコンバータ関数。
+    void setToConverter(ToConverter toConverter) {
+        toConverter_ = std::move(toConverter);
+    }
+
+    /// @brief 既定の書き出し用コンバータ。
+    /// @return JsonWriter::writeObjectで値を書き出すコンバータ関数。
+    static ToConverter defaultToConverter() {
+        return [](JsonWriter& writer, const ValueType& value) {
+            writer.writeObject(value);
+        };
     }
 
 private:
