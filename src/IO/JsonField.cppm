@@ -202,8 +202,7 @@ using PolymorphicTypeFactory = std::function<PtrType()>;
 /// @param parser JsonParserの参照。
 /// @param entriesMap 型名からファクトリ関数へのマッピング。
 /// @param jsonKey 型判別用のJSONキー名。
-/// @return 読み取ったオブジェクトのポインタ。
-/// @throws std::runtime_error 型キーが見つからない、または未知の型名の場合。
+/// @return 読み取ったオブジェクトのポインタ。または型キーが見つからない／未知の型名の場合はnullptr。
 export template <typename PtrType>
     requires SmartOrRawPointer<PtrType>
 PtrType readPolymorphicInstance(
@@ -226,7 +225,7 @@ PtrType readPolymorphicInstance(
     parser.readTo(typeName);
     const auto* factory = entriesMap.findValue(typeName);
     if (!factory) {
-        throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeName);
+        return nullptr;
     }
 
     // ファクトリでインスタンスを生成
@@ -271,14 +270,18 @@ PtrType readPolymorphicInstanceOrNull(
     JsonParser& parser,
     const collection::MapReference<std::string_view, PolymorphicTypeFactory<PtrType>>& entriesMap,
     std::string_view jsonKey = "type") {
-
     // null値の場合はnullptrを返す
     if (parser.nextIsNull()) {
         parser.skipValue();
         return nullptr;
     }
     // オブジェクトの場合は通常の読み取り処理
-    return readPolymorphicInstance<PtrType>(parser, entriesMap, jsonKey);
+    auto position = parser.nextPosition();
+    auto instance = readPolymorphicInstance<PtrType>(parser, entriesMap, jsonKey);
+    if (instance == nullptr) {
+         throw std::runtime_error("Unknown polymorphic type: " + std::to_string(position));
+    }
+    return instance;
 }
 
 /// @brief ポリモーフィック型（unique_ptr<基底クラス>）用のJsonField派生クラス。
