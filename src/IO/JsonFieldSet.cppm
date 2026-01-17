@@ -112,13 +112,8 @@ public:
             const auto& value = owner->*(field.member);
             using FieldType = std::remove_cvref_t<decltype(field)>;
 
-            // toJsonメンバーを持つ場合はそれを使用
-            if constexpr (HasToJson<FieldType, std::remove_cvref_t<decltype(value)>>) {
-                field.toJson(writer, value);
-            } else {
-                // JsonFieldのデフォルトtoJsonに委譲
-                field.toJson(writer, value);
-            }
+            // デフォルトの toJson に委譲（明示的な分岐不要）
+            field.toJson(writer, value);
         });
     }
 private:
@@ -152,13 +147,8 @@ private:
                 using FieldType = std::remove_cvref_t<decltype(field)>;
                 using ValueType = typename FieldType::ValueType;
 
-                // fromJson メンバーを持つ場合はそれを使用（ポリモーフィック含む）
-                if constexpr (HasFromJson<FieldType, ValueType>) {
-                    obj.*(field.member) = field.fromJson(parser);
-                } else {
-                    // JsonFieldのデフォルトfromJsonに委譲
-                    obj.*(field.member) = field.fromJson(parser);
-                }
+                // デフォルトの fromJson に委譲（明示的な分岐不要）
+                obj.*(field.member) = field.fromJson(parser);
             });
         }
 
@@ -193,12 +183,8 @@ public:
             using FieldType = std::remove_cvref_t<decltype(field)>;
             using ValueType = typename FieldType::ValueType;
 
-            // fromJson メンバーを持つ場合はそれを使用（ポリモーフィック含む）
-            if constexpr (HasFromJson<FieldType, ValueType>) {
-                owner->*(field.member) = field.fromJson(parser);
-            } else {
-                owner->*(field.member) = field.fromJson(parser);
-            }
+            // デフォルトの fromJson に委譲（明示的な分岐不要）
+            owner->*(field.member) = field.fromJson(parser);
         });
 
         return true;

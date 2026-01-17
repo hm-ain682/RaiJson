@@ -26,9 +26,11 @@ target_sources(RaiJson
             src/IO/JsonTokenizer.cppm
             src/IO/JsonConcepts.cppm
             src/IO/JsonField.cppm
+            src/IO/JsonFieldExtras.cppm
             src/IO/JsonFieldSet.cppm
             src/IO/JsonIO.cppm
 )
+
 
 # Expose the target so other projects can link against it
 add_library(RaiJson::RaiJson ALIAS RaiJson)
