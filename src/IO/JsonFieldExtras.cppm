@@ -330,7 +330,7 @@ struct JsonSetField : JsonField<MemberPtrType> {
                 parser.readTo(s);
                 addElement(out, std::move(s));
             } else {
-                auto elem = ::rai::json::value_io::template readValue<ElementType>(parser);
+                auto elem = value_io::readValue<ElementType>(parser);
                 addElement(out, std::move(elem));
             }
         }
@@ -344,7 +344,7 @@ struct JsonSetField : JsonField<MemberPtrType> {
     void toJson(JsonWriter& writer, const ValueType& container) const {
         writer.startArray();
         for (const auto& elem : container) {
-            ::rai::json::value_io::template writeValue<ElementType>(writer, elem);
+            value_io::writeValue<ElementType>(writer, elem);
         }
         writer.endArray();
     }
@@ -515,9 +515,9 @@ using FromJsonEntry = std::function<ValueType(JsonParser&)>;
 /// @details fromJsonでは次のトークン種別に対応するコンバータを使用して値を読み取る。
 ///          toJsonでは指定されたコンバータを使用して書き出す。
 export template <typename MemberPtrType>
-struct JsonTokenDispatchField : JsonField<MemberPtrType> {
-    using Base = JsonField<MemberPtrType>;
-    using typename Base::ValueType;
+struct JsonTokenDispatchField : JsonFieldBase<MemberPtrType> {
+    using Base = JsonFieldBase<MemberPtrType>;
+    using ValueType = typename MemberPointerTraits<MemberPtrType>::ValueType;
     using ToConverter = std::function<void(JsonWriter&, const ValueType&)>;
 
     /// @brief コンストラクタ。

@@ -48,11 +48,6 @@ struct MemberPointerTraits<Value Owner::*> {
     using ValueType = Value;
 };
 
-
-
-/// @note nullは全ポインタ型（unique_ptr/shared_ptr/生ポインタ）へ暗黙変換可能のため、
-///       専用ヘルパーは不要（nullptrを直接返す）。
-
 // ******************************************************************************** フィールド定義
 
 /// @brief JSONフィールドの基本定義。
@@ -75,16 +70,6 @@ struct JsonFieldBase {
     MemberPtrType member{}; ///< メンバー変数へのポインタ。
     const char* key{};      ///< JSONキー名。
     bool required{false};   ///< 必須フィールドかどうか。
-
-protected:
-    // Value IO helpers moved to rai::json::value_io namespace
-    // writeValue/readValue implementations were extracted to a separate module.
-
-
-
-
-private:
-    // Variant/object helpers moved to rai::json::value_io namespace.
 };
 
 // Forward declaration of JsonField (primary template)
@@ -100,10 +85,41 @@ JsonField(MemberPtrType, const char*) -> JsonField<MemberPtrType>;
 // ------------------------------
 // JsonField partial specializations
 // ------------------------------
-// Specialization: std::string
-/// Handles string member variables. Writes/reads string values directly.
+
+/// @brief string 系を除くレンジ（配列/コンテナ）を表す concept。
+/// @details std::ranges::range を満たし、かつ `StringLike` を除外することで
+///          `std::string` を配列として誤判定しないようにします。
+export template<typename T>
+concept RangeContainer = std::ranges::range<T> && !StringLike<T>;
+
+/// @brief `value_io` が直接扱える型群を表す concept。
+/// @details 含まれる型の代表例:
+///   - 基本型（数値/真偽値 等）
+///   - `std::string`
+///   - ユニークポインタ等のスマートポインタ（`UniquePointer`）
+///   - `std::variant`（`IsStdVariant`）
+///   - レンジコンテナ（`RangeContainer`）
+///   - `jsonFields()` を提供するオブジェクト（`HasJsonFields`）
+///   - `readJson` / `writeJson` を持つ型（`HasReadJson && HasWriteJson`）
+/// @note 新しい型サポートを追加する際は、`value_io` 側の実装と
+///       両方を更新してください。これにより診断が早期に行われます。
+export template<typename T>
+concept ValueIoSupported =
+    IsFundamentalValue<T> ||
+    std::same_as<T, std::string> ||
+    UniquePointer<T> ||
+    IsStdVariant<T>::value ||
+    RangeContainer<T> ||
+    HasJsonFields<T> ||
+    (HasReadJson<T> && HasWriteJson<T>);
+
+/// @brief `value_io` に処理を委譲する `JsonField` の部分特殊化。
+/// @details `ValueIoSupported` を満たす型のみを受け付け、
+///          `value_io::writeValue` / `value_io::readValue` に処理を委ねます。
+///          未対応型は concept によってコンパイル時に早期に検出され、
+///          エラーの発生箇所と原因が明確になります。
 export template <typename Owner, typename Value>
-    requires std::same_as<std::remove_cvref_t<Value>, std::string>
+    requires ValueIoSupported<std::remove_cvref_t<Value>>
 struct JsonField<Value Owner::*> : JsonFieldBase<Value Owner::*> {
     using Base = JsonFieldBase<Value Owner::*>;
     using ValueType = typename Base::ValueType;
@@ -112,138 +128,12 @@ struct JsonField<Value Owner::*> : JsonFieldBase<Value Owner::*> {
         : Base(memberPtr, keyName, req) {}
 
     void toJson(JsonWriter& writer, const ValueType& value) const {
-        writer.writeObject(value);
+        value_io::template writeValue<ValueType>(writer, value);
     }
 
     ValueType fromJson(JsonParser& parser) const {
-        ValueType out;
-        parser.readTo(out);
-        return out;
+        return value_io::template readValue<ValueType>(parser);
     }
 };
-
-// Specialization: fundamental types (int/float/bool/...)
-/// Uses fundamental read/write helpers (readTo/writeObject).
-export template <typename Owner, typename Value>
-    requires IsFundamentalValue<std::remove_cvref_t<Value>>
-struct JsonField<Value Owner::*> : JsonFieldBase<Value Owner::*> {
-    using Base = JsonFieldBase<Value Owner::*>;
-    using ValueType = typename Base::ValueType;
-
-    constexpr explicit JsonField(Value Owner::* memberPtr, const char* keyName, bool req = false)
-        : Base(memberPtr, keyName, req) {}
-
-    void toJson(JsonWriter& writer, const ValueType& value) const {
-        writer.writeObject(value);
-    }
-
-    ValueType fromJson(JsonParser& parser) const {
-        ValueType out{};
-        parser.readTo(out);
-        return out;
-    }
-};
-
-// Specialization: unique_ptr / smart pointer types
-/// Handles pointer types; supports null and object/string payloads.
-export template <typename Owner, typename Value>
-    requires UniquePointer<std::remove_cvref_t<Value>>
-struct JsonField<Value Owner::*> : JsonFieldBase<Value Owner::*> {
-    using Base = JsonFieldBase<Value Owner::*>;
-    using ValueType = typename Base::ValueType;
-
-    constexpr explicit JsonField(Value Owner::* memberPtr, const char* keyName, bool req = false)
-        : Base(memberPtr, keyName, req) {}
-
-    void toJson(JsonWriter& writer, const ValueType& value) const {
-        ::rai::json::value_io::template writeValue<ValueType>(writer, value);
-    }
-
-    ValueType fromJson(JsonParser& parser) const {
-        return ::rai::json::value_io::template readValue<ValueType>(parser);
-    }
-};
-
-// Specialization: std::variant
-/// Dispatches variant alternatives using readVariant/writeValue.
-export template <typename Owner, typename Value>
-    requires IsStdVariant<std::remove_cvref_t<Value>>::value
-struct JsonField<Value Owner::*> : JsonFieldBase<Value Owner::*> {
-    using Base = JsonFieldBase<Value Owner::*>;
-    using ValueType = typename Base::ValueType;
-
-    constexpr explicit JsonField(Value Owner::* memberPtr, const char* keyName, bool req = false)
-        : Base(memberPtr, keyName, req) {}
-
-    void toJson(JsonWriter& writer, const ValueType& value) const {
-        ::rai::json::value_io::template writeValue<ValueType>(writer, value);
-    }
-
-    ValueType fromJson(JsonParser& parser) const {
-        return ::rai::json::value_io::template readValue<ValueType>(parser);
-    }
-};
-
-// Specialization: ranges (containers like vector, set) excluding string
-/// Generic container handling; requires push_back or insert for element insertion.
-export template <typename Owner, typename Value>
-    requires (std::ranges::range<std::remove_cvref_t<Value>> && !StringLike<std::remove_cvref_t<Value>>)
-struct JsonField<Value Owner::*> : JsonFieldBase<Value Owner::*> {
-    using Base = JsonFieldBase<Value Owner::*>;
-    using ValueType = typename Base::ValueType;
-
-    constexpr explicit JsonField(Value Owner::* memberPtr, const char* keyName, bool req = false)
-        : Base(memberPtr, keyName, req) {}
-
-    void toJson(JsonWriter& writer, const ValueType& value) const {
-        ::rai::json::value_io::template writeValue<ValueType>(writer, value);
-    }
-
-    ValueType fromJson(JsonParser& parser) const {
-        return ::rai::json::value_io::template readValue<ValueType>(parser);
-    }
-};
-
-// Specialization: types with jsonFields() or custom readJson/writeJson
-/// Delegates to object-level jsonFields/readJson/writeJson implementations.
-export template <typename Owner, typename Value>
-    requires (HasJsonFields<std::remove_cvref_t<Value>> ||
-              HasReadJson<std::remove_cvref_t<Value>> ||
-              HasWriteJson<std::remove_cvref_t<Value>>)
-struct JsonField<Value Owner::*> : JsonFieldBase<Value Owner::*> {
-    using Base = JsonFieldBase<Value Owner::*>;
-    using ValueType = typename Base::ValueType;
-
-    constexpr explicit JsonField(Value Owner::* memberPtr, const char* keyName, bool req = false)
-        : Base(memberPtr, keyName, req) {}
-
-    void toJson(JsonWriter& writer, const ValueType& value) const {
-        ::rai::json::value_io::template writeValue<ValueType>(writer, value);
-    }
-
-    ValueType fromJson(JsonParser& parser) const {
-        return ::rai::json::value_io::template readValue<ValueType>(parser);
-    }
-};
-
-// Fallback generic partial specialization (catch-all)
-/// Generic fallback that uses writeValue/readValue helpers.
-export template <typename Owner, typename Value>
-struct JsonField<Value Owner::*> : JsonFieldBase<Value Owner::*> {
-    using Base = JsonFieldBase<Value Owner::*>;
-    using ValueType = typename Base::ValueType;
-
-    constexpr explicit JsonField(Value Owner::* memberPtr, const char* keyName, bool req = false)
-        : Base(memberPtr, keyName, req) {}
-
-    void toJson(JsonWriter& writer, const ValueType& value) const {
-        ::rai::json::value_io::template writeValue<ValueType>(writer, value);
-    }
-
-    ValueType fromJson(JsonParser& parser) const {
-        return ::rai::json::value_io::template readValue<ValueType>(parser);
-    }
-};
-
 
 }  // namespace rai::json
