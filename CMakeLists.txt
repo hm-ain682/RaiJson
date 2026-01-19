@@ -28,6 +28,7 @@ target_sources(RaiJson
             src/IO/JsonConcepts.cppm
             src/IO/JsonField.cppm
             src/IO/JsonFieldExtras.cppm
+            src/IO/JsonPolymorphic.cppm
             src/IO/JsonFieldSet.cppm
             src/IO/JsonIO.cppm
 )
