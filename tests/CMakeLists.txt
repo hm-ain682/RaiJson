@@ -40,6 +40,7 @@ target_sources(RaiJson_JsonTest PRIVATE
     JsonTestHelper.cppm
 )
 target_link_libraries(RaiJson_JsonTest PRIVATE RaiJson::RaiJson gtest_main)
+target_sources(RaiJson_JsonTest PRIVATE JsonEnumFieldTest.cpp)
 add_test(NAME RaiJson_JsonTest COMMAND RaiJson_JsonTest)
 
 add_executable(RaiJson_JsonBenchmark JsonBenchmark.cpp)

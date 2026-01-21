@@ -52,7 +52,7 @@ struct MemberPointerTraits<Value Owner::*> {
 export template <typename MemberPtrType>
 using MemberPointerValueType = typename MemberPointerTraits<MemberPtrType>::ValueType;
 
-// ******************************************************************************** フィールド定義
+// ******************************************************************************** 共通基底
 
 /// @brief JSONフィールドの基本定義。
 /// @tparam MemberPtr メンバー変数へのポインタ。
@@ -76,6 +76,8 @@ struct JsonFieldBase {
     bool required{false};   ///< 必須フィールドかどうか。
 };
 
+// ******************************************************************************** 基本型用
+
 // Forward declaration of JsonField (primary template)
 export template <typename MemberPtrType>
 struct JsonField;
@@ -85,11 +87,6 @@ export template <typename MemberPtrType>
 JsonField(MemberPtrType, const char*, bool) -> JsonField<MemberPtrType>;
 export template <typename MemberPtrType>
 JsonField(MemberPtrType, const char*) -> JsonField<MemberPtrType>;
-
-// ------------------------------
-// JsonField partial specializations
-// ------------------------------
-
 
 /// @brief `value_io` が直接扱える型群を表す concept。
 /// @note 新しい型サポートを追加する際は、`value_io` 側の実装と
@@ -127,7 +124,7 @@ struct JsonField<Value Owner::*> : JsonFieldBase<Value Owner::*> {
     }
 };
 
-// ------------------------- JsonEnumField and Token dispatch -------------------------
+// ******************************************************************************** enum用
 
 export template <typename EnumType>
 struct EnumEntry {
@@ -139,7 +136,7 @@ struct EnumEntry {
 /// @tparam MemberPtr Enumメンバー変数へのポインタ。
 /// @tparam Entries Enumと文字列のマッピング配列への参照。
 export template <typename MemberPtrType, std::size_t N = 0>
-struct JsonEnumField : JsonField<MemberPtrType> {
+struct JsonEnumField : JsonFieldBase<MemberPtrType> {
     using Traits = MemberPointerTraits<MemberPtrType>;
     using ValueType = typename Traits::ValueType;
     static_assert(std::is_enum_v<ValueType>, "JsonEnumField requires enum type");
@@ -150,7 +147,7 @@ struct JsonEnumField : JsonField<MemberPtrType> {
     /// @param entries エントリ配列
     constexpr explicit JsonEnumField(MemberPtrType memberPtr, const char* keyName,
         const EnumEntry<ValueType> (&entries)[N], bool req = false)
-        : JsonField<MemberPtrType>(memberPtr, keyName, req) {
+        : JsonFieldBase<MemberPtrType>(memberPtr, keyName, req) {
 
         // build name -> value descriptor array
         std::pair<std::string_view, ValueType> nv[N];
@@ -211,6 +208,8 @@ private:
     collection::SortedHashArrayMap<std::string_view, ValueType, N> nameToValue_{}; ///< 名前からenum値へのマップ。
     collection::SortedHashArrayMap<ValueType, std::string_view, N> valueToName_{}; ///< enum値から名前へのマップ。
 };
+
+// ******************************************************************************** コンテナ用
 
 /// @brief 配列形式のJSONを読み書きする汎用フィールド。
 /// @tparam MemberPtrType コンテナ型のメンバー変数へのポインタ。
@@ -296,7 +295,7 @@ constexpr auto makeJsonField(MemberPtrType memberPtr, const char* keyName, bool 
     return JsonField<MemberPtrType>(memberPtr, keyName, req);
 }
 
-// ******************************************************************************** トークン種別ディスパッチフィールド
+// ******************************************************************************** トークン種別毎の分岐用
 
 /// @brief JsonTokenTypeの総数。
 /// @note この値はJsonTokenType enumの要素数と一致している必要がある。
