@@ -171,7 +171,7 @@ T readValue(JsonParser& parser) {
 /// @param writer 出力先の JsonWriter
 /// @param ptr 書き出すポインタ
 export template <typename T>
-    requires UniquePointer<T>
+    requires IsUniquePtr<T>
 void writeValue(JsonWriter& writer, const T& ptr) {
     if (!ptr) {
         writer.null();
@@ -185,9 +185,9 @@ void writeValue(JsonWriter& writer, const T& ptr) {
 /// @param parser 入力元の JsonParser
 /// @return 読み取ったポインタを返します（成功時は std::make_unique による所有権を持つ）
 export template <typename T>
-    requires UniquePointer<T>
+    requires IsUniquePtr<T>
 T readValue(JsonParser& parser) {
-    using Element = typename PointerElementType<T>::type;
+    using Element = typename T::element_type;
     if (parser.nextIsNull()) {
         parser.skipValue();
         return nullptr;
@@ -237,8 +237,7 @@ bool isVariantAlternativeMatch(JsonTokenType tokenType) {
     using Decayed = std::remove_cvref_t<T>;
     switch (tokenType) {
     case JsonTokenType::Null:
-        return UniquePointer<Decayed>;
-    case JsonTokenType::Bool:
+        return IsUniquePtr<Decayed>;    case JsonTokenType::Bool:
         return std::is_same_v<Decayed, bool>;
     case JsonTokenType::Integer:
         return std::is_integral_v<Decayed> && !std::is_same_v<Decayed, bool>;
@@ -247,9 +246,9 @@ bool isVariantAlternativeMatch(JsonTokenType tokenType) {
     case JsonTokenType::String:
         return std::is_same_v<Decayed, std::string>;
     case JsonTokenType::StartObject:
-        return HasJsonFields<Decayed> || HasReadJson<Decayed> || UniquePointer<Decayed>;
+        return HasJsonFields<Decayed> || HasReadJson<Decayed> || IsUniquePtr<Decayed>;
     case JsonTokenType::StartArray:
-        return IsStdVector<Decayed>::value;
+        return IsStdVector<Decayed>;
     default:
         return false;
     }
@@ -260,7 +259,7 @@ bool isVariantAlternativeMatch(JsonTokenType tokenType) {
 /// @param writer 出力先の JsonWriter
 /// @param v 書き出す variant
 export template <typename T>
-    requires IsStdVariant<T>::value
+    requires IsStdVariant<T>
 void writeValue(JsonWriter& writer, const T& v) {
     std::visit([&writer](const auto& inner) {
         writeValue(writer, inner);
@@ -272,7 +271,7 @@ void writeValue(JsonWriter& writer, const T& v) {
 /// @param parser 入力元の JsonParser
 /// @return 読み取った variant を返します
 export template <typename T>
-    requires IsStdVariant<T>::value
+    requires IsStdVariant<T>
 T readValue(JsonParser& parser) {
     using VariantType = T;
     auto tokenType = parser.nextTokenType();
@@ -288,7 +287,7 @@ T readValue(JsonParser& parser) {
 /// @param writer 出力先の JsonWriter
 /// @param range 書き出す範囲
 export template <typename T>
-    requires RangeContainer<T>
+    requires IsRangeContainer<T>
 void writeValue(JsonWriter& writer, const T& range) {
     writer.startArray();
     for (const auto& elem : range) {
@@ -302,8 +301,8 @@ void writeValue(JsonWriter& writer, const T& range) {
 /// @param parser 入力元の JsonParser
 /// @return 読み取ったコンテナを返します
 export template <typename T>
-    requires (RangeContainer<T> &&
-              requires(T& c, std::ranges::range_value_t<T>&& v) { c.push_back(std::move(v)); })
+    requires (IsRangeContainer<T> &&
+        requires(T& c, std::ranges::range_value_t<T>&& v) { c.push_back(std::move(v)); })
 T readValue(JsonParser& parser) {
     using Element = std::ranges::range_value_t<T>;
     T out{};
@@ -320,8 +319,8 @@ T readValue(JsonParser& parser) {
 /// @param parser 入力元の JsonParser
 /// @return 読み取ったコンテナを返します
 export template <typename T>
-    requires (RangeContainer<T> &&
-              requires(T& c, std::ranges::range_value_t<T>&& v) { c.insert(std::move(v)); })
+    requires (IsRangeContainer<T> &&
+        requires(T& c, std::ranges::range_value_t<T>&& v) { c.insert(std::move(v)); })
 T readValue(JsonParser& parser) {
     using Element = std::ranges::range_value_t<T>;
     T out{};

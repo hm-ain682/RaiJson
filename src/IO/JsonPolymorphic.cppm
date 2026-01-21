@@ -35,9 +35,29 @@ namespace rai::json {
 
 // ------------------------- Polymorphic helpers and fields -------------------------
 
+/// @brief ポインタ型から要素型を抽出するメタ関数。
+/// @tparam T ポインタ型（unique_ptr<T>、shared_ptr<T>、T*）。
+template <typename T>
+struct PointerElementType;
+
+template <typename T>
+struct PointerElementType<std::unique_ptr<T>> {
+    using type = T;
+};
+
+template <typename T>
+struct PointerElementType<std::shared_ptr<T>> {
+    using type = T;
+};
+
+template <typename T>
+struct PointerElementType<T*> {
+    using type = T;
+};
+
 /// @brief ポリモーフィック型用のファクトリ関数型（ポインタ型を返す）。
 export template <typename PtrType>
-    requires SmartOrRawPointer<PtrType>
+    requires IsSmartOrRawPointer<PtrType>
 using PolymorphicTypeFactory = std::function<PtrType()>;
 
 /// @brief ポリモーフィックオブジェクト1つ分を読み取るヘルパー関数。
@@ -47,7 +67,7 @@ using PolymorphicTypeFactory = std::function<PtrType()>;
 /// @param jsonKey 型判別用のJSONキー名。
 /// @return 読み取ったオブジェクトのポインタ。または型キーが見つからない／未知の型名の場合はnullptr。
 export template <typename PtrType>
-    requires SmartOrRawPointer<PtrType>
+    requires IsSmartOrRawPointer<PtrType>
 PtrType readPolymorphicInstance(
     JsonParser& parser,
     const collection::MapReference<std::string_view, PolymorphicTypeFactory<PtrType>>& entriesMap,
@@ -103,7 +123,7 @@ PtrType readPolymorphicInstance(
 
 /// @brief ポリモーフィックオブジェクト1つ分を読み取るヘルパー関数（null許容版）。
 export template <typename PtrType>
-    requires SmartOrRawPointer<PtrType>
+    requires IsSmartOrRawPointer<PtrType>
 PtrType readPolymorphicInstanceOrNull(
     JsonParser& parser,
     const collection::MapReference<std::string_view, PolymorphicTypeFactory<PtrType>>& entriesMap,
@@ -126,10 +146,9 @@ PtrType readPolymorphicInstanceOrNull(
 /// @tparam MemberPtr unique_ptr<基底クラス>メンバー変数へのポインタ。
 /// @tparam Entries 型名とファクトリ関数のマッピング配列への参照。
 export template <typename MemberPtrType>
-    requires SmartOrRawPointer<typename MemberPointerTraits<MemberPtrType>::ValueType>
+    requires IsSmartOrRawPointer<MemberPointerValueType<MemberPtrType>>
 struct JsonPolymorphicField : JsonField<MemberPtrType> {
-    using Traits = MemberPointerTraits<MemberPtrType>;
-    using ValueType = typename Traits::ValueType;
+    using ValueType = MemberPointerValueType<MemberPtrType>; 
     using Base = JsonField<MemberPtrType>;
     using BaseType = typename PointerElementType<ValueType>::type;
     using Key = std::string_view;
@@ -212,10 +231,9 @@ private:
 
 /// @brief ポリモーフィックな配列（vector<std::unique_ptr<BaseType>>）用のフィールド。
 export template <typename MemberPtrType>
-    requires VectorOfPointers<typename MemberPointerTraits<MemberPtrType>::ValueType>
+    requires IsVectorOfPointers<MemberPointerValueType<MemberPtrType>>
 struct JsonPolymorphicArrayField : JsonField<MemberPtrType> {
-    using Traits = MemberPointerTraits<MemberPtrType>;
-    using ValueType = typename Traits::ValueType;
+    using ValueType = MemberPointerValueType<MemberPtrType>; 
     using Base = JsonField<MemberPtrType>;
     using ElementPtrType = typename ValueType::value_type; ///< ポインタ要素型。
     using BaseType = typename PointerElementType<ElementPtrType>::type;

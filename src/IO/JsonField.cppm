@@ -48,6 +48,10 @@ struct MemberPointerTraits<Value Owner::*> {
     using ValueType = Value;
 };
 
+// 型エイリアス: メンバーポインタから ValueType を簡単に取り出す。
+export template <typename MemberPtrType>
+using MemberPointerValueType = typename MemberPointerTraits<MemberPtrType>::ValueType;
+
 // ******************************************************************************** フィールド定義
 
 /// @brief JSONフィールドの基本定義。
@@ -94,9 +98,9 @@ export template<typename T>
 concept ValueIoSupported
     = IsFundamentalValue<T>         // 基本型（数値/真偽値 等）
     || std::same_as<T, std::string> // std::string
-    || UniquePointer<T>             // std::unique_ptr等のポインタ
-    || IsStdVariant<T>::value       // std::variant
-    || RangeContainer<T>            // vector/set等のコンテナ
+    || IsUniquePtr<T>               // std::unique_ptr等のポインタ
+    || IsStdVariant<T>               // std::variant
+    || IsRangeContainer<T>          // vector/set等のコンテナ
     || HasJsonFields<T>             // `jsonFields()` を持つ型
     || (HasReadJson<T> && HasWriteJson<T>); // `readJson` / `writeJson` を持つ型
 

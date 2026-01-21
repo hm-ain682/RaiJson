@@ -15,13 +15,8 @@ export module rai.json.json_concepts;
 export namespace rai::json {
 
 // ******************************************************************************** 概念定義
-// json入出力対象型は以下の通り。
-// ・プリミティブ型（int, double, bool など）
-// ・std::string
-// ・vector, unique_ptr, variant；要素がjson入出力対象型であること。
-// ・jsonFields()を持つ型→HasJsonFields
 
-/// @brief プリミティブ型かどうかを判定するconcept。
+/// @brief プリミティブ型（int, double, bool など）かどうかを判定するconcept。
 /// @tparam T 判定対象の型。
 template <typename T>
 concept IsFundamentalValue = std::is_fundamental_v<T>;
@@ -62,75 +57,55 @@ concept HasReadJson = requires(T& obj, JsonParser& parser) {
     { obj.readJson(parser) } -> std::same_as<void>;
 };
 
-// ******************************************************************************** メタタイプ & ユーティリティ（追加）
-
-/// @brief ポインタ型から要素型を抽出するメタ関数。
-/// @tparam T ポインタ型（unique_ptr<T>、shared_ptr<T>、T*）。
+/// @brief std::vector 型かどうかを判定する concept（allocator を含め正確に判定）。
 template <typename T>
-struct PointerElementType;
+concept IsStdVector = requires {
+    typename T::value_type;
+    typename T::allocator_type;
+} && std::is_same_v<T, std::vector<typename T::value_type, typename T::allocator_type>>;
 
+/// @brief std::variant 型かどうかを判定する concept（std::variant 固有の trait を確認）。
 template <typename T>
-struct PointerElementType<std::unique_ptr<T>> {
-    using type = T;
+concept IsStdVariant = requires {
+    typename std::variant_size<T>::type;
 };
 
+/// @brief 文字列系型かどうかを判定するconcept（名前を `LikesString` に変更）。
 template <typename T>
-struct PointerElementType<std::shared_ptr<T>> {
-    using type = T;
-};
+concept LikesString = std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view>;
 
-template <typename T>
-struct PointerElementType<T*> {
-    using type = T;
-};
-
-/// @brief std::vector型を判定するメタ関数。
-template <typename T>
-struct IsStdVector : std::false_type {};
-
-template <typename U, typename Alloc>
-struct IsStdVector<std::vector<U, Alloc>> : std::true_type {};
-
-/// @brief std::variant型を判定するメタ関数。
-template <typename T>
-struct IsStdVariant : std::false_type {};
-
-template <typename... Types>
-struct IsStdVariant<std::variant<Types...>> : std::true_type {};
-
-/// @brief std::unique_ptr型を判定するconcept。
-template <typename T>
-concept UniquePointer = std::is_same_v<std::remove_cvref_t<T>,
-    std::unique_ptr<typename PointerElementType<std::remove_cvref_t<T>>::type>>;
-
-/// @brief 文字列系型かどうかを判定するconcept。
-template <typename T>
-concept StringLike = std::is_same_v<std::remove_cvref_t<T>, std::string> ||
-    std::is_same_v<std::remove_cvref_t<T>, std::string_view>;
-
-/// @brief string 系を除くレンジ（配列/コンテナ）を表す concept。
-/// @details std::ranges::range を満たし、かつ `StringLike` を除外することで
+/// @brief string 系を除くレンジ（配列/コンテナ）を表す concept（名前を `IsRangeContainer` に変更）。
+/// @details std::ranges::range を満たし、かつ `LikesString` を除外することで
 ///          `std::string` を配列として誤判定しないようにします。
 template<typename T>
-concept RangeContainer = std::ranges::range<T> && !StringLike<T>;
+concept IsRangeContainer = std::ranges::range<T> && !LikesString<T>;
 
 /// @brief 常にfalseを返す補助変数テンプレート。
 template <typename>
 inline constexpr bool AlwaysFalse = false;
 
-/// @brief ポインタ型（unique_ptr/shared_ptr/生ポインタ）であることを確認するconcept。
+/// @brief std::unique_ptr を判定する concept（element_type / deleter_type を確認し正確に判定）。
 template <typename T>
-concept SmartOrRawPointer = requires {
-    typename PointerElementType<T>::type;
-} && (std::is_same_v<T, std::unique_ptr<typename PointerElementType<T>::type>> ||
-      std::is_same_v<T, std::shared_ptr<typename PointerElementType<T>::type>> ||
-      std::is_same_v<T, typename PointerElementType<T>::type*>);
+concept IsUniquePtr = requires {
+    typename T::element_type;
+    typename T::deleter_type;
+} && std::is_same_v<T, std::unique_ptr<typename T::element_type, typename T::deleter_type>>;
 
-/// @brief ポインタ型のvectorであることを確認するconcept。
+/// @brief std::shared_ptr を判定する concept（element_type を確認し正確に判定）。
 template <typename T>
-concept VectorOfPointers = requires {
+concept IsSharedPtr = requires {
+    typename T::element_type;
+} && std::is_same_v<T, std::shared_ptr<typename T::element_type>>;
+
+/// @brief ポインタ型（unique_ptr/shared_ptr/生ポインタ）であることを確認する concept（名前を `IsSmartOrRawPointer` に変更）。
+template <typename T>
+concept IsSmartOrRawPointer = IsUniquePtr<T> || IsSharedPtr<T> || std::is_pointer_v<T>;
+
+/// @brief ポインタ型のvectorであることを確認するconcept（名前を `IsVectorOfPointers` に変更）。
+template <typename T>
+concept IsVectorOfPointers = requires {
     typename T::value_type;
-} && SmartOrRawPointer<typename T::value_type> &&
-     (std::is_same_v<T, std::vector<typename T::value_type>>);
+} && IsSmartOrRawPointer<typename T::value_type> &&
+     std::is_same_v<T, std::vector<typename T::value_type>>;
 
 }
