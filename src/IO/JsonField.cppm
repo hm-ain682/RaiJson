@@ -54,6 +54,80 @@ using MemberPointerValueType = typename MemberPointerTraits<MemberPtrType>::Valu
 
 // ******************************************************************************** 共通基底
 
+// JsonEnumMapのように、enum <-> 文字列名の双方向マップを提供する型のconcept。
+export template <typename Converter, typename Value>
+concept IsJsonConverter
+    = requires { typename Converter::Value; }
+    && std::is_same_v<typename Converter::Value, Value>
+    && requires(const Converter& converter, JsonWriter& writer, const Value& value) {
+        converter.write(writer, value);
+    }
+    && requires(const Converter& converter, JsonParser& parser) {
+        { converter.read(parser) } -> std::same_as<Value>;
+    };
+
+/// @brief JSONフィールドの基本定義。
+/// @tparam MemberPtr メンバー変数へのポインタ。
+export template <typename MemberPtrType, typename Converter>
+    requires std::is_member_object_pointer_v<MemberPtrType>
+        && IsJsonConverter<Converter, MemberPointerValueType<MemberPtrType>>
+struct JsonField_ {
+    static_assert(std::is_member_object_pointer_v<MemberPtrType>,
+        "JsonField requires a data member pointer");
+    using Traits = MemberPointerTraits<MemberPtrType>;
+    using OwnerType = typename Traits::OwnerType;
+    using ValueType = typename Traits::ValueType;
+
+    /// @brief コンストラクタ。
+    /// @param memberPtr メンバー変数へのポインタ。
+    /// @param converter 値の変換方法。
+    /// @param keyName JSONキー名。
+    /// @param req 必須フィールドかどうか。
+    constexpr explicit JsonField_(MemberPtrType memberPtr, Converter converter,
+        const char* keyName, bool req = false)
+        : member(memberPtr), converter(std::move(converter)), key(keyName), required(req) {}
+
+    MemberPtrType member{}; ///< メンバー変数へのポインタ。
+    Converter converter;    ///< 値の変換方法。
+    const char* key{};      ///< JSONキー名。
+    bool required{false};   ///< 必須フィールドかどうか。
+};
+
+// ******************************************************************************** 変換方法
+
+template<typename T>
+    requires IsFundamentalValue<T> || std::is_same_v<T, std::string>
+struct IdentityConverter {
+    using Value = T;
+
+    void write(JsonWriter& writer, const T& value) const {
+        writer.writeObject(value);
+    }
+
+    T read(JsonParser& parser) const {
+        T out{};
+        parser.readTo(out);
+        return out;
+    }
+};
+
+/// @brief JsonField を生成するヘルパー関数
+export template <typename MemberPtrType>
+    requires IsFundamentalValue<MemberPointerValueType<MemberPtrType>>
+        || std::is_same_v<MemberPointerValueType<MemberPtrType>, std::string>
+constexpr auto makeJsonField_(MemberPtrType memberPtr, const char* keyName, bool req = false) {
+    using Converter = IdentityConverter<MemberPointerValueType<MemberPtrType>>;
+    static Converter converter{};
+    return JsonField_<MemberPtrType, Converter>(
+        memberPtr, converter, keyName, req);
+}
+
+
+
+
+
+// ******************************************************************************** 共通基底
+
 /// @brief JSONフィールドの基本定義。
 /// @tparam MemberPtr メンバー変数へのポインタ。
 export template <typename MemberPtrType>
