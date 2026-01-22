@@ -244,7 +244,7 @@ constexpr auto makeJsonEnumField(MemberPtrType memberPtr, const char* keyName,
 /// @details push_back または insert を持つコンテナに対応する。
 export template <typename MemberPtrType>
     requires std::ranges::range<typename MemberPointerTraits<MemberPtrType>::ValueType>
-struct JsonSetField : JsonField<MemberPtrType> {
+struct JsonContainerField : JsonField<MemberPtrType> {
     using Traits = MemberPointerTraits<MemberPtrType>;
     using ValueType = typename Traits::ValueType;
     using Base = JsonField<MemberPtrType>;
@@ -254,7 +254,7 @@ struct JsonSetField : JsonField<MemberPtrType> {
     /// @param memberPtr メンバー変数へのポインタ。
     /// @param keyName JSONキー名。
     /// @param req 必須フィールドかどうか。
-    constexpr explicit JsonSetField(MemberPtrType memberPtr, const char* keyName,
+    constexpr explicit JsonContainerField(MemberPtrType memberPtr, const char* keyName,
         bool req = false)
         : Base(memberPtr, keyName, req) {}
 
@@ -306,15 +306,15 @@ private:
     }
 };
 
-/// @brief JsonSetFieldを生成するヘルパー関数。
+/// @brief JsonContainerFieldを生成するヘルパー関数。
 /// @tparam MemberPtrType メンバーポインタ型。
 /// @param memberPtr メンバー変数へのポインタ。
 /// @param keyName JSONキー名。
 /// @param req 必須フィールドかどうか。
-/// @return 生成されたJsonSetField。
+/// @return 生成されたJsonContainerField。
 export template <typename MemberPtrType>
-constexpr auto makeJsonSetField(MemberPtrType memberPtr, const char* keyName, bool req = false) {
-    return JsonSetField<MemberPtrType>(memberPtr, keyName, req);
+constexpr auto makeJsonContainerField(MemberPtrType memberPtr, const char* keyName, bool req = false) {
+    return JsonContainerField<MemberPtrType>(memberPtr, keyName, req);
 }
 
 // ******************************************************************************** トークン種別毎の分岐用

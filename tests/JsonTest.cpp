@@ -674,10 +674,10 @@ TEST(HasReadWriteJsonTest, RoundTrip) {
 }
 
 // ********************************************************************************
-// テストカテゴリ：JsonSetField
+// テストカテゴリ：JsonContainerField
 // ********************************************************************************
 
-/// @brief JsonSetFieldのテスト用の単純なカスタム型。
+/// @brief JsonContainerFieldのテスト用の単純なカスタム型。
 struct Tag {
     std::string label;
     int priority = 0;
@@ -698,13 +698,13 @@ struct Tag {
     }
 };
 
-/// @brief JsonSetFieldをvectorで使用するテスト用構造体。
+/// @brief JsonContainerFieldをvectorで使用するテスト用構造体。
 struct SetFieldVectorHolder {
     std::vector<Tag> tags;
 
     const IJsonFieldSet& jsonFields() const {
         static const auto fields = makeJsonFieldSet<SetFieldVectorHolder>(
-            makeJsonSetField(&SetFieldVectorHolder::tags, "tags")
+            makeJsonContainerField(&SetFieldVectorHolder::tags, "tags")
         );
         return fields;
     }
@@ -717,8 +717,8 @@ struct SetFieldVectorHolder {
     }
 };
 
-/// @brief JsonSetFieldのvectorでの読み書きテスト。
-TEST(JsonSetFieldTest, VectorReadWriteRoundTrip) {
+/// @brief JsonContainerFieldのvectorでの読み書きテスト。
+TEST(JsonContainerFieldTest, VectorReadWriteRoundTrip) {
     SetFieldVectorHolder original;
     original.tags = {{"first", 1}, {"second", 2}, {"third", 3}};
     testJsonRoundTrip(original,
@@ -726,20 +726,20 @@ TEST(JsonSetFieldTest, VectorReadWriteRoundTrip) {
         "{label:\"third\",priority:3}]}");
 }
 
-/// @brief JsonSetFieldの空vectorでの読み書きテスト。
-TEST(JsonSetFieldTest, VectorEmptyReadWriteRoundTrip) {
+/// @brief JsonContainerFieldの空vectorでの読み書きテスト。
+TEST(JsonContainerFieldTest, VectorEmptyReadWriteRoundTrip) {
     SetFieldVectorHolder original;
     original.tags = {};
     testJsonRoundTrip(original, "{tags:[]}");
 }
 
-/// @brief JsonSetFieldをstd::setで使用するテスト用構造体。
+/// @brief JsonContainerFieldをstd::setで使用するテスト用構造体。
 struct SetFieldSetHolder {
     std::set<std::string> tags;
 
     const IJsonFieldSet& jsonFields() const {
         static const auto fields = makeJsonFieldSet<SetFieldSetHolder>(
-            makeJsonSetField(&SetFieldSetHolder::tags, "tags")
+            makeJsonContainerField(&SetFieldSetHolder::tags, "tags")
         );
         return fields;
     }
@@ -752,22 +752,22 @@ struct SetFieldSetHolder {
     }
 };
 
-/// @brief JsonSetFieldのstd::setでの読み書きテスト。
-TEST(JsonSetFieldTest, SetReadWriteRoundTrip) {
+/// @brief JsonContainerFieldのstd::setでの読み書きテスト。
+TEST(JsonContainerFieldTest, SetReadWriteRoundTrip) {
     SetFieldSetHolder original;
     original.tags = {"alpha", "beta", "gamma"};
     // std::setはソートされるため、出力順序もソート済み
     testJsonRoundTrip(original, "{tags:[\"alpha\",\"beta\",\"gamma\"]}");
 }
 
-/// @brief JsonSetFieldの空std::setでの読み書きテスト。
-TEST(JsonSetFieldTest, SetEmptyReadWriteRoundTrip) {
+/// @brief JsonContainerFieldの空std::setでの読み書きテスト。
+TEST(JsonContainerFieldTest, SetEmptyReadWriteRoundTrip) {
     SetFieldSetHolder original;
     original.tags = {};
     testJsonRoundTrip(original, "{tags:[]}");
 }
 
-/// @brief JsonSetFieldを複雑な要素型（オブジェクト）で使用するテスト用構造体。
+/// @brief JsonContainerFieldを複雑な要素型（オブジェクト）で使用するテスト用構造体。
 struct Point {
     int x = 0;
     int y = 0;
@@ -788,13 +788,13 @@ struct Point {
     }
 };
 
-/// @brief JsonSetFieldを複雑な要素型で使用するテスト用構造体。
+/// @brief JsonContainerFieldを複雑な要素型で使用するテスト用構造体。
 struct SetFieldObjectHolder {
     std::vector<Point> points;
 
     const IJsonFieldSet& jsonFields() const {
         static const auto fields = makeJsonFieldSet<SetFieldObjectHolder>(
-            makeJsonSetField(&SetFieldObjectHolder::points, "points")
+            makeJsonContainerField(&SetFieldObjectHolder::points, "points")
         );
         return fields;
     }
@@ -807,8 +807,8 @@ struct SetFieldObjectHolder {
     }
 };
 
-/// @brief JsonSetFieldの複雑な要素型での読み書きテスト。
-TEST(JsonSetFieldTest, ObjectElementReadWriteRoundTrip) {
+/// @brief JsonContainerFieldの複雑な要素型での読み書きテスト。
+TEST(JsonContainerFieldTest, ObjectElementReadWriteRoundTrip) {
     SetFieldObjectHolder original;
     original.points = {{1, 2}, {3, 4}, {5, 6}};
     testJsonRoundTrip(original, "{points:[{x:1,y:2},{x:3,y:4},{x:5,y:6}]}");
