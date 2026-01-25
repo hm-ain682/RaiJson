@@ -443,11 +443,14 @@ struct PointerHolder {
     std::vector<std::unique_ptr<std::string>> ptrVec;
 
     const IJsonFieldSet& jsonFields() const {
-        static const auto fields = makeJsonFieldSet<PointerHolder>(
-            makeJsonUniquePtrField(&PointerHolder::ptr, "ptr"),
-            makeJsonContainerField(&PointerHolder::ptrVec, "ptrVec")
-        );
-        return fields;
+            // Provide explicit element/container converter for vector of unique_ptr<string>
+            static const UniquePtrConverter<std::unique_ptr<std::string>> elemConv{};
+            static const ContainerConverter<std::vector<std::unique_ptr<std::string>>, decltype(elemConv)> conv(elemConv);
+            static const auto fields = makeJsonFieldSet<PointerHolder>(
+                makeJsonUniquePtrField(&PointerHolder::ptr, "ptr"),
+                makeJsonContainerField(&PointerHolder::ptrVec, "ptrVec", conv)
+            );
+            return fields;
     }
 
     /// @brief 他インスタンスとの同値判定。
@@ -903,8 +906,12 @@ TEST(JsonElementConverterTest, NestedContainerUsesElementConverter)
     struct Holder {
         std::vector<std::vector<RWElement>> v;
         const IJsonFieldSet& jsonFields() const {
+            // Explicitly construct nested container converter: inner element -> JsonFieldsConverter<RWElement>
+            static const JsonFieldsConverter<RWElement> innerElemConv{};
+            static const ContainerConverter<std::vector<RWElement>, JsonFieldsConverter<RWElement>> innerConv(innerElemConv);
+            static const ContainerConverter<std::vector<std::vector<RWElement>>, decltype(innerConv)> conv(innerConv);
             static const auto fields = makeJsonFieldSet<Holder>(
-                makeJsonContainerField(&Holder::v, "v")
+                makeJsonContainerField(&Holder::v, "v", conv)
             );
             return fields;
         }
