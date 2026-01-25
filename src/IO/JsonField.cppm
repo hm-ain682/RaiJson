@@ -48,11 +48,13 @@ struct MemberPointerTraits<Value Owner::*> {
     using ValueType = Value;
 };
 
-// 型エイリアス: メンバーポインタから ValueType を簡単に取り出す。
+/// @brief メンバーポインタ型から対応する値型を取り出す型エイリアス。
 export template <typename MemberPtrType>
 using MemberPointerValueType = typename MemberPointerTraits<MemberPtrType>::ValueType;
 
-// JsonEnumMapのように、enum <-> 文字列名の双方向マップを提供する型のconcept。
+/// @brief JSONへの書き出しと読み込みを行うコンバータに要求される条件を定義する concept。
+/// @tparam Converter コンバータ型
+/// @tparam Value コンバータが扱う値の型
 export template <typename Converter, typename Value>
 concept IsJsonConverter = std::is_class_v<Converter>
     && requires { typename Converter::Value; }
@@ -77,20 +79,34 @@ struct JsonField {
     static_assert(IsJsonConverter<Converter, MemberPointerValueType<MemberPtrType>>,
         "Converter must satisfy IsJsonConverter for the member value type");
 
-    // 参照で構築: コンバータは外部で所有/管理され、フィールドより長く存続する必要があります
+    /// @brief コンストラクタ（コンバータ参照を外部で管理する版）。
+    /// @param memberPtr メンバポインタ
+    /// @param keyName JSONキー名
+    /// @param conv コンバータへの参照（呼び出し側で寿命を保証）
+    /// @param req 必須フラグ
     constexpr explicit JsonField(MemberPtrType memberPtr, const char* keyName,
         std::reference_wrapper<const Converter> conv, bool req = false)
         : member(memberPtr), converterRef(conv), key(keyName), required(req) {}
 
-    // 便宜上のオーバーロード: const Converter& を受け取り参照を保存します（呼び出し側で寿命を保証してください）
+    /// @brief コンストラクタ（コンバータを const 参照で受け取る便宜オーバーロード）。
+    /// @param memberPtr メンバポインタ
+    /// @param keyName JSONキー名
+    /// @param conv コンバータ（参照を保存するため寿命に注意）
+    /// @param req 必須フラグ
     constexpr explicit JsonField(MemberPtrType memberPtr, const char* keyName,
         const Converter& conv, bool req = false)
         : member(memberPtr), converterRef(std::cref(conv)), key(keyName), required(req) {}
 
+    /// @brief 値を JSON に書き込む。
+    /// @param writer 書き込み先の JsonWriter
+    /// @param value 書き込む値
     void write(JsonWriter& writer, const ValueType& value) const {
         converterRef.get().write(writer, value);
     }
 
+    /// @brief JSON から値を読み取る。
+    /// @param parser 読み取り元の JsonParser
+    /// @return 変換された値
     ValueType read(JsonParser& parser) const {
         return converterRef.get().read(parser);
     }
@@ -157,7 +173,8 @@ struct WriteReadJsonConverter {
     }
 };
 
-// Fallback: exclude complex types and provide clear diagnostics
+/// @brief 型 `T` に応じた既定のコンバータを返すユーティリティ。
+/// @note 基本型、`HasJsonFields`、`HasReadJson`/`HasWriteJson` を持つ型を自動的に扱い、その他の複雑な型は明確な static_assert で除外します。
 export template <typename T>
 constexpr auto& getConverter() {
     if constexpr (IsFundamentalValue<T> || std::same_as<T, std::string>) {
@@ -296,11 +313,13 @@ private:
     MapType map_{};
 };
 
+/// @brief `EnumEntry` 配列から `JsonEnumMap` を構築するヘルパー。
 export template <typename Enum, std::size_t N>
 constexpr auto makeJsonEnumMap(const EnumEntry<Enum> (&entries)[N]) {
     return JsonEnumMap<Enum, N>(entries);
 }
 
+/// @brief 列挙型メンバに対する `JsonField` を作成する（`JsonEnumMap` を渡す版）。
 export template <typename MemberPtrType, typename MapType>
 constexpr auto makeJsonEnumField(MemberPtrType memberPtr, const char* keyName,
     const MapType& map, bool req = false)
@@ -311,7 +330,7 @@ constexpr auto makeJsonEnumField(MemberPtrType memberPtr, const char* keyName,
         memberPtr, keyName, std::cref(conv), req);
 }
 
-// 外部で管理される EnumConverter を使って JsonField を作成します（コンバータはフィールドより長く存続する必要があります）
+/// @brief 外部で管理される `EnumConverter` を用いて `JsonField` を作成する（コンバータはフィールドより長く存続する必要があります）。
 export template <typename MemberPtrType, typename MapType>
 constexpr auto makeJsonEnumField(MemberPtrType memberPtr, const char* keyName,
     const EnumConverter<MapType>& conv, bool req = false)
@@ -398,7 +417,7 @@ constexpr auto makeJsonContainerField(MemberPtrType memberPtr, const char* keyNa
     return JsonField<MemberPtrType, std::remove_cvref_t<decltype(conv)>>(memberPtr, keyName, std::cref(conv), req);
 } 
 
-// Overload: accept an explicit ContainerConverter instance to avoid copying element converters.
+/// @brief 明示的な `ContainerConverter` を渡して `JsonField` を作成するオーバーロード。
 export template <typename MemberPtrType, typename Container, typename ElemConv>
     requires std::is_member_object_pointer_v<MemberPtrType>
         && std::same_as<MemberPointerValueType<MemberPtrType>, Container>
@@ -465,6 +484,7 @@ constexpr auto& getUniquePtrConverter() {
     return inst;
 }
 
+/// @brief `unique_ptr` 型のメンバ用に `JsonField` を作成する（既定の要素コンバータを使用）。
 export template <typename MemberPtrType>
 constexpr auto makeJsonUniquePtrField(
     MemberPtrType memberPtr, const char* keyName, bool req = false)
@@ -476,6 +496,7 @@ constexpr auto makeJsonUniquePtrField(
         memberPtr, keyName, std::cref(converter), req);
 }
 
+/// @brief `unique_ptr` 型のメンバ用に `JsonField` を作成する（要素コンバータを明示的に指定する版）。
 export template <typename MemberPtrType, typename PtrConv>
     requires std::is_member_object_pointer_v<MemberPtrType>
         && IsUniquePtr<MemberPointerValueType<MemberPtrType>>
@@ -492,13 +513,14 @@ export template <typename T>
     requires IsStdVariant<T>
 struct VariantConverter;
 
-// Variant
-// VariantConverter: std::variant のトークン派生 (token-dispatch) と read/write を実装します
+/// @brief `std::variant` を現在のトークンに基づいて読み書きするコンバータ。
+/// @tparam T 対象の variant 型
 export template <typename T>
     requires IsStdVariant<T>
 struct VariantConverter {
     using Value = T;
 
+    /// @brief Variant 値を JSON に書き出す。
     void write(JsonWriter& writer, const T& v) const {
         std::visit([&writer](const auto& inner) {
             using Inner = std::remove_cvref_t<decltype(inner)>;
@@ -507,6 +529,7 @@ struct VariantConverter {
         }, v);
     }
 
+    /// @brief JSON のトークンに応じて variant を構築して返す。
     T read(JsonParser& parser) const {
         using VariantType = T;
         auto tokenType = parser.nextTokenType();
@@ -566,7 +589,7 @@ struct VariantConverter {
     }
 };
 
-// Helpers for variant members (default uses VariantConverter)
+/// @brief `std::variant` 型のメンバ用に `JsonField` を作成するヘルパー（既定の `VariantConverter` を使用）。
 export template <typename MemberPtrType>
 constexpr auto makeJsonVariantField(MemberPtrType memberPtr, const char* keyName, bool req = false)
     requires std::is_member_object_pointer_v<MemberPtrType> && IsStdVariant<MemberPointerValueType<MemberPtrType>> {
@@ -611,11 +634,13 @@ struct TokenDispatchConverter {
         }
     }
 
+    /// @brief トークン種別に応じて適切な変換関数を呼び出して値を読み取る。
     ValueType read(JsonParser& parser) const {
         std::size_t index = static_cast<std::size_t>(parser.nextTokenType());
         return fromEntries_[index](parser);
     }
 
+    /// @brief 値を JSON に書き出すための関数を呼び出す。
     void write(JsonWriter& writer, const ValueType& value) const {
         toConverter_(writer, value);
     }
@@ -630,26 +655,28 @@ private:
     std::array<std::function<ValueType(JsonParser&)>, 12> fromEntries_{};
     ToConverter toConverter_{};
 };
-// --- TokenDispatchConverter（JsonTokenTypeCount の後に定義する）
 
-/// @brief 補助ファクトリ（TokenDispatchはFromJsonEntryが必要なのでここに置く）
-// 外部で管理される TokenDispatchConverter を使って JsonField を作成します（コンバータはフィールドより長く存続する必要があります）
+/// @brief 外部で管理される `TokenDispatchConverter` を用いて `JsonField` を作成する（コンバータはフィールドより長く存続する必要があります）。
 export template <typename MemberPtrType, typename ValueType>
 constexpr auto makeJsonTokenDispatchField(MemberPtrType memberPtr, const char* keyName,
-    const TokenDispatchConverter<ValueType>& conv, bool req = false) requires std::same_as<ValueType, MemberPointerValueType<MemberPtrType>> {
-    return JsonField<MemberPtrType, TokenDispatchConverter<ValueType>>(memberPtr, keyName, std::cref(conv), req);
+    const TokenDispatchConverter<ValueType>& conv, bool req = false)
+    requires std::same_as<ValueType, MemberPointerValueType<MemberPtrType>> {
+    return JsonField<MemberPtrType, TokenDispatchConverter<ValueType>>(
+        memberPtr, keyName, std::cref(conv), req);
 }
 
-// 便宜上のオーバーロード: FromJsonEntry の配列から TokenDispatch 用の JsonField を構築します
+/// @brief `FromJsonEntry` 配列から `TokenDispatchConverter` を構築し、対応する `JsonField` を返す便宜オーバーロード。
 export template <typename MemberPtrType, typename ValueType, std::size_t FromN>
 constexpr auto makeJsonTokenDispatchField(MemberPtrType memberPtr, const char* keyName,
     const std::array<FromJsonEntry<ValueType>, FromN>& fromEntries,
-    typename TokenDispatchConverter<ValueType>::ToConverter toConverter = TokenDispatchConverter<ValueType>::defaultToConverter(),
+    typename TokenDispatchConverter<ValueType>::ToConverter toConverter
+    = TokenDispatchConverter<ValueType>::defaultToConverter(),
     bool req = false) requires std::same_as<ValueType, MemberPointerValueType<MemberPtrType>> {
     static_assert(FromN <= 12);
     // 補足: conv は 'fromEntries' から構築した静的データを参照するため、返される JsonField より長い寿命を持つ必要があります
     static const TokenDispatchConverter<ValueType> conv(fromEntries, toConverter);
-    return JsonField<MemberPtrType, TokenDispatchConverter<ValueType>>(memberPtr, keyName, std::cref(conv), req);
+    return JsonField<MemberPtrType, TokenDispatchConverter<ValueType>>(
+        memberPtr, keyName, std::cref(conv), req);
 }
 
 }  // namespace rai::json
