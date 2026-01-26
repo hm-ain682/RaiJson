@@ -903,6 +903,56 @@ TEST(JsonElementConverterTest, VariantUsesElementConverter)
     testJsonRoundTrip(original, "{v:{x:42}}" );
 }
 
+TEST(JsonElementConverterTest, VariantElementConverterDerivedCustomizesString)
+{
+    using Var = std::variant<std::string, RWElement>;
+
+    struct MyElemConv : VariantElementConverter<Var> {
+        using VariantElementConverter<Var>::write; // bring base template into scope for other types
+
+        void write(JsonWriter& writer, const std::string& value) const {
+            // Prefix strings with marker so we can detect customization
+            std::string tmp;
+            tmp.reserve(4 + value.size());
+            tmp = "PFX:";
+            tmp += value;
+            writer.writeObject(tmp);
+        }
+        void readString(JsonParser& parser, Var& value) const {
+            std::string s;
+            parser.readTo(s);
+            if (s.rfind("PFX:", 0) != 0) {
+                throw std::runtime_error("Expected prefixed string");
+            }
+            value = s.substr(4);
+        }
+    };
+
+    struct Holder {
+        Var v;
+        const IJsonFieldSet& jsonFields() const {
+            static const MyElemConv elemConv{};
+            static const auto conv = makeVariantConverter<Var>(elemConv);
+            static const auto fields = makeJsonFieldSet<Holder>(
+                JsonField(&Holder::v, "v", std::cref(conv))
+            );
+            return fields;
+        }
+        bool operator==(const Holder& other) const { return v == other.v; }
+        bool equals(const Holder& other) const { return *this == other; }
+    };
+
+    // String alternative is written with prefix
+    Holder s;
+    s.v = std::string("abc");
+    testJsonRoundTrip(s, "{v:\"PFX:abc\"}");
+
+    // Object alternative still works (RWElement)
+    Holder o;
+    o.v = RWElement{5};
+    testJsonRoundTrip(o, "{v:{x:5}}" );
+}
+
 TEST(JsonElementConverterTest, NestedContainerUsesElementConverter)
 {
     struct Holder {

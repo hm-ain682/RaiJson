@@ -509,93 +509,187 @@ constexpr auto makeJsonUniquePtrField(
 
 // ******************************************************************************** variant用変換方法
 
-export template <typename T>
-    requires IsStdVariant<T>
-struct VariantConverter;
+export template <typename Variant>
+    requires IsStdVariant<Variant>
+struct VariantElementConverter {
+    template<typename T>
+    void write(JsonWriter& writer, const T& value) const {
+        static const auto& conv = getConverter<std::remove_cvref_t<T>>();
+        conv.write(writer, value);
+    }
+
+    void readNull(JsonParser& parser, Variant& value) const {
+        if constexpr (canAssignNullptr()) {
+            value = nullptr;
+        }
+        else {
+            throw std::runtime_error("Null is not supported in variant");
+        }
+    }
+private:
+    static constexpr bool canAssignNullptr() noexcept {
+        using Null = std::nullptr_t;
+        return []<size_t... I>(std::index_sequence<I...>) {
+            return (std::is_assignable_v<
+                typename std::variant_alternative_t<I, Variant>&,
+                Null
+            > || ...);
+        }(std::make_index_sequence<std::variant_size_v<Variant>>{});
+    }
+public:
+    void readBool(JsonParser& parser, Variant& value) const {
+        if constexpr (canAssign<bool>()) {
+            parser.readTo(std::get<bool>(value));
+        }
+        else {
+            throw std::runtime_error("Bool is not supported in variant");
+        }
+    }
+
+    void readInteger(JsonParser& parser, Variant& value) const {
+        if constexpr (canAssign<int>()) {
+            parser.readTo(std::get<int>(value));
+        }
+        else {
+            throw std::runtime_error("Integer is not supported in variant");
+        }
+    }
+
+    void readNumber(JsonParser& parser, Variant& value) const {
+        if constexpr (canAssign<double>()) {
+            parser.readTo(std::get<double>(value));
+        }
+        else {
+            throw std::runtime_error("Number is not supported in variant");
+        }
+    }
+
+    void readString(JsonParser& parser, Variant& value) const {
+        if constexpr (canAssign<std::string>()) {
+            parser.readTo(std::get<std::string>(value));
+        }
+        else {
+            throw std::runtime_error("String is not supported in variant");
+        }
+    }
+private:
+    template<class T>
+    static constexpr bool canAssign() noexcept {
+        using U = std::remove_cvref_t<T>;
+        return []<size_t... I>(std::index_sequence<I...>) {
+            return (std::is_same_v<U, std::remove_cvref_t<typename std::variant_alternative_t<I, Variant>>>
+                || ...);
+        }(std::make_index_sequence<std::variant_size_v<Variant>>{});
+    }
+
+public:
+    void readStartArray(JsonParser& parser, Variant& value) const {
+        throw std::runtime_error("Array is not supported in variant");
+    }
+
+    void readStartObject(JsonParser& parser, Variant& value) const {
+        bool found = false;
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            // Evaluate alternatives in order; stop at the first that matches
+            ((void)(!found && ([&]() {
+                using Alt = std::remove_cvref_t<typename std::variant_alternative_t<I, Variant>>;
+                if constexpr (HasJsonFields<Alt> || (HasReadJson<Alt> && HasWriteJson<Alt>)) {
+                    value = getConverter<Alt>().read(parser);
+                    found = true;
+                }
+                return 0;
+            }())), ...);
+        }(std::make_index_sequence<std::variant_size_v<Variant>>{});
+
+        if (!found) {
+            throw std::runtime_error("Object is not supported in variant");
+        }
+    }
+};
 
 /// @brief `std::variant` を現在のトークンに基づいて読み書きするコンバータ。
 /// @tparam T 対象の variant 型
-export template <typename T>
-    requires IsStdVariant<T>
+export template <typename Variant, typename ElementConverter>
+    requires IsStdVariant<Variant>
 struct VariantConverter {
-    using Value = T;
+    using Value = Variant;
+    using ElementConverterT = std::remove_cvref_t<ElementConverter>;
+    static_assert(std::is_base_of_v<VariantElementConverter<Variant>, ElementConverterT>
+        || std::is_same_v<ElementConverterT, VariantElementConverter<Variant>>,
+        "ElementConverter must be VariantElementConverter<Variant> or derived from it");
+
+    VariantConverter(ElementConverter elementConverter)
+        : elementConverter_(std::move(elementConverter)) {}
 
     /// @brief Variant 値を JSON に書き出す。
-    void write(JsonWriter& writer, const T& v) const {
-        std::visit([&writer](const auto& inner) {
-            using Inner = std::remove_cvref_t<decltype(inner)>;
-            static const auto& conv = getConverter<Inner>();
-            conv.write(writer, inner);
+    void write(JsonWriter& writer, const Variant& v) const {
+        std::visit([&](const auto& inner) {
+            elementConverter_.write(writer, inner);
         }, v);
     }
 
     /// @brief JSON のトークンに応じて variant を構築して返す。
-    T read(JsonParser& parser) const {
-        using VariantType = T;
+    Variant read(JsonParser& parser) const {
         auto tokenType = parser.nextTokenType();
-        VariantType out{};
-        bool matched = false;
-
-        auto helper = [&](auto idx) {
-            if (matched) {
-                return;
-            }
-            constexpr std::size_t I = decltype(idx)::value;
-            using Alternative = std::variant_alternative_t<I, VariantType>;
-            using Decayed = std::remove_cvref_t<Alternative>;
-            bool ok = false;
-            switch (tokenType) {
-            case JsonTokenType::Null:
-                ok = IsUniquePtr<Decayed>;
-                break;
-            case JsonTokenType::Bool:
-                ok = std::is_same_v<Decayed, bool>;
-                break;
-            case JsonTokenType::Integer:
-                ok = std::is_integral_v<Decayed> && !std::is_same_v<Decayed, bool>;
-                break;
-            case JsonTokenType::Number:
-                ok = std::is_floating_point_v<Decayed>;
-                break;
-            case JsonTokenType::String:
-                ok = std::is_same_v<Decayed, std::string>;
-                break;
-            case JsonTokenType::StartObject:
-                ok = HasJsonFields<Decayed> || HasReadJson<Decayed> || IsUniquePtr<Decayed>;
-                break;
-            case JsonTokenType::StartArray:
-                ok = IsStdVector<Decayed>;
-                break;
-            default:
-                ok = false;
-                break;
-            }
-            if (ok) {
-                const auto& altConv = getConverter<Alternative>();
-                out = VariantType(std::in_place_index<I>, altConv.read(parser));
-                matched = true;
-            }
-        };
-
-        auto dispatch = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            (helper(std::integral_constant<std::size_t, Is>{}), ...);
-        };
-        dispatch(std::make_index_sequence<std::variant_size_v<VariantType>>{});
-
-        if (!matched) {
-            throw std::runtime_error("Failed to dispatch variant for current token");
+        Variant out{};
+        switch (tokenType) {
+        case JsonTokenType::Null:
+            elementConverter_.readNull(parser, out);
+            break;
+        case JsonTokenType::Bool:
+            elementConverter_.readBool(parser, out);
+            break;
+        case JsonTokenType::Integer:
+            elementConverter_.readInteger(parser, out);
+            break;
+        case JsonTokenType::Number:
+            elementConverter_.readNumber(parser, out);
+            break;
+        case JsonTokenType::String:
+            elementConverter_.readString(parser, out);
+            break;
+        case JsonTokenType::StartObject:
+            elementConverter_.readStartObject(parser, out);
+            break;
+        case JsonTokenType::StartArray:
+            elementConverter_.readStartArray(parser, out);
+            break;
+        default:
+            break;
         }
         return out;
     }
+
+private:
+    ElementConverter elementConverter_{};
 };
+
+/// @brief Variant 用の VariantConverter を構築するヘルパー（既定の ElementConverter を使用）。
+export template <typename Variant>
+    requires IsStdVariant<Variant>
+constexpr auto makeVariantConverter() {
+    using ElemConv = VariantElementConverter<Variant>;
+    return VariantConverter<Variant, ElemConv>(ElemConv{});
+}
+
+/// @brief Variant 用の VariantConverter を構築するヘルパー（明示的な ElementConverter を使用）。
+export template <typename Variant, typename ElemConv>
+    requires IsStdVariant<Variant>
+        && (std::is_base_of_v<VariantElementConverter<Variant>, std::remove_cvref_t<ElemConv>>
+        || std::is_same_v<std::remove_cvref_t<ElemConv>, VariantElementConverter<Variant>>)
+constexpr auto makeVariantConverter(ElemConv elemConv) {
+    return VariantConverter<Variant, std::remove_cvref_t<ElemConv>>(std::move(elemConv));
+}
 
 /// @brief `std::variant` 型のメンバ用に `JsonField` を作成するヘルパー（既定の `VariantConverter` を使用）。
 export template <typename MemberPtrType>
 constexpr auto makeJsonVariantField(MemberPtrType memberPtr, const char* keyName, bool req = false)
-    requires std::is_member_object_pointer_v<MemberPtrType> && IsStdVariant<MemberPointerValueType<MemberPtrType>> {
+    requires std::is_member_object_pointer_v<MemberPtrType>
+        && IsStdVariant<MemberPointerValueType<MemberPtrType>> {
     using Var = MemberPointerValueType<MemberPtrType>;
-    static const VariantConverter<Var> conv{};
-    return JsonField<MemberPtrType, VariantConverter<Var>>(memberPtr, keyName, std::cref(conv), req);
+    static const auto converter = makeVariantConverter<Var>();
+    return JsonField<MemberPtrType, std::remove_cvref_t<decltype(converter)>>(
+        memberPtr, keyName, std::cref(converter), req);
 }
 
 
