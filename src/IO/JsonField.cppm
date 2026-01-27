@@ -71,9 +71,10 @@ concept IsJsonConverter = std::is_class_v<Converter>
 
 /// @brief メンバー変数とJSON項目を対応付ける。
 export template <typename MemberPtrType, typename Converter>
-    requires std::is_member_object_pointer_v<MemberPtrType>
 struct JsonField {
-    using Traits = MemberPointerTraits<MemberPtrType>;
+    static_assert(std::is_member_object_pointer_v<MemberPtrType>,
+        "JsonField requires MemberPtrType to be a member object pointer");
+    using Traits = MemberPointerTraits<MemberPtrType>; 
     using OwnerType = typename Traits::OwnerType;
     using ValueType = typename Traits::ValueType;
     static_assert(IsJsonConverter<Converter, MemberPointerValueType<MemberPtrType>>,
@@ -122,9 +123,10 @@ struct JsonField {
 
 /// @brief 基本型等を扱うコンバータ（value_io に委譲）
 export template <typename T>
-    requires (IsFundamentalValue<T> || std::same_as<T, std::string>)
 struct FundamentalConverter {
-    using Value = T;
+    static_assert(IsFundamentalValue<T> || std::same_as<T, std::string>,
+        "FundamentalConverter requires T to be a fundamental JSON value or std::string");
+    using Value = T; 
     void write(JsonWriter& writer, const T& value) const { writer.writeObject(value); }
     T read(JsonParser& parser) const {
         T out{};
@@ -135,9 +137,10 @@ struct FundamentalConverter {
 
 /// @brief jsonFields を持つ型のコンバータ
 export template <typename T>
-    requires HasJsonFields<T> && std::default_initializable<T>
 struct JsonFieldsConverter {
-    using Value = T;
+    static_assert(HasJsonFields<T> && std::default_initializable<T>,
+        "JsonFieldsConverter requires T to have jsonFields() and be default-initializable");
+    using Value = T; 
     void write(JsonWriter& writer, const T& obj) const {
         auto& fields = obj.jsonFields();
         writer.startObject();
@@ -162,9 +165,10 @@ struct JsonFieldsConverter {
 
 /// @brief writeJson/readJson を持つ型のコンバータ
 export template <typename T>
-    requires HasReadJson<T> && HasWriteJson<T> && std::default_initializable<T>
 struct WriteReadJsonConverter {
-    using Value = T;
+    static_assert(HasReadJson<T> && HasWriteJson<T> && std::default_initializable<T>,
+        "WriteReadJsonConverter requires T to have readJson/writeJson and be default-initializable");
+    using Value = T; 
     void write(JsonWriter& writer, const T& obj) const { obj.writeJson(writer); }
     T read(JsonParser& parser) const {
         T out{};
@@ -188,18 +192,6 @@ constexpr auto& getConverter() {
     else if constexpr (HasReadJson<T> && HasWriteJson<T>) {
         static const WriteReadJsonConverter<T> inst{};
         return inst;
-    }
-    else if constexpr (IsUniquePtr<T>) {
-        static_assert(false,
-            "getConverter: unique_ptr types are excluded; use makeJsonUniquePtrField or provide an explicit UniquePtrConverter");
-    }
-    else if constexpr (IsStdVariant<T>) {
-        static_assert(false,
-            "getConverter: variant types are excluded; use makeJsonVariantField or provide an explicit VariantConverter");
-    }
-    else if constexpr (IsContainer<T>) {
-        static_assert(false,
-            "getConverter: container types are excluded; use makeJsonContainerField or provide an explicit ContainerConverter");
     }
     else {
         static_assert(false,
@@ -286,9 +278,10 @@ private:
 /// @brief 列挙型用のコンバータ
 /// @tparam MapType JsonEnumMap型など
 export template <typename MapType>
-    requires IsJsonEnumMap<MapType>
 struct EnumConverter {
-    using Enum = typename MapType::Enum;
+    static_assert(IsJsonEnumMap<MapType>,
+        "EnumConverter requires MapType to satisfy IsJsonEnumMap");
+    using Enum = typename MapType::Enum; 
     using Value = Enum;
     constexpr explicit EnumConverter(const MapType& map)
         : map_(map) {}
@@ -322,9 +315,11 @@ constexpr auto makeJsonEnumMap(const EnumEntry<Enum> (&entries)[N]) {
 /// @brief 列挙型メンバに対する `JsonField` を作成する（`JsonEnumMap` を渡す版）。
 export template <typename MemberPtrType, typename MapType>
 constexpr auto makeJsonEnumField(MemberPtrType memberPtr, const char* keyName,
-    const MapType& map, bool req = false)
-    requires IsJsonEnumMap<MapType>
-        && std::same_as<typename MapType::Enum, MemberPointerValueType<MemberPtrType>> {
+    const MapType& map, bool req = false) {
+    static_assert(IsJsonEnumMap<MapType>,
+        "makeJsonEnumField requires MapType to satisfy IsJsonEnumMap");
+    static_assert(std::same_as<typename MapType::Enum, MemberPointerValueType<MemberPtrType>>,
+        "MapType::Enum must match the member's value type");
     static const EnumConverter<MapType> conv(map);
     return JsonField<MemberPtrType, EnumConverter<MapType>>(
         memberPtr, keyName, std::cref(conv), req);
@@ -333,9 +328,11 @@ constexpr auto makeJsonEnumField(MemberPtrType memberPtr, const char* keyName,
 /// @brief 外部で管理される `EnumConverter` を用いて `JsonField` を作成する（コンバータはフィールドより長く存続する必要があります）。
 export template <typename MemberPtrType, typename MapType>
 constexpr auto makeJsonEnumField(MemberPtrType memberPtr, const char* keyName,
-    const EnumConverter<MapType>& conv, bool req = false)
-    requires IsJsonEnumMap<MapType>
-        && std::same_as<typename MapType::Enum, MemberPointerValueType<MemberPtrType>> {
+    const EnumConverter<MapType>& conv, bool req = false) {
+    static_assert(IsJsonEnumMap<MapType>,
+        "makeJsonEnumField requires MapType to satisfy IsJsonEnumMap");
+    static_assert(std::same_as<typename MapType::Enum, MemberPointerValueType<MemberPtrType>>,
+        "MapType::Enum must match the member's value type");
     return JsonField<MemberPtrType, EnumConverter<MapType>>(
         memberPtr, keyName, std::cref(conv), req);
 }
@@ -345,12 +342,13 @@ constexpr auto makeJsonEnumField(MemberPtrType memberPtr, const char* keyName,
 
 /// @brief コンテナ用コンバータ（要素コンバータ参照を持つ）。
 export template <typename Container, typename ElementConverter>
-    requires IsContainer<Container>
-        && IsJsonConverter<ElementConverter,
-            std::remove_cvref_t<std::ranges::range_value_t<Container>>>
 struct ContainerConverter {
-    using Value = Container;
+    static_assert(IsContainer<Container>,
+        "ContainerConverter requires Container to be a container type");
+    using Value = Container; 
     using Element = std::remove_cvref_t<std::ranges::range_value_t<Container>>;
+    static_assert(IsJsonConverter<ElementConverter, Element>,
+        "ElementConverter must satisfy IsJsonConverter for container element type");
     using ElementConverterT = std::remove_cvref_t<ElementConverter>;
     static_assert(std::is_same_v<typename ElementConverterT::Value, Element>,
         "ElementConverter::Value must match container element type");
@@ -407,24 +405,31 @@ private:
 /// @details push_back または insert を持つコンテナに対応する。
 // JsonContainerField helper: construct a ContainerConverter for the container element if available
 export template <typename MemberPtrType>
-constexpr auto makeJsonContainerField(MemberPtrType memberPtr, const char* keyName, bool req = false) {
+constexpr auto makeJsonContainerField(
+    MemberPtrType memberPtr, const char* keyName, bool req = false) {
     using Container = MemberPointerValueType<MemberPtrType>;
-    static_assert(IsContainer<Container>, "makeJsonContainerField: member is not a container type");
+    static_assert(IsContainer<Container>,
+        "makeJsonContainerField: member is not a container type");
     using Elem = std::remove_cvref_t<std::ranges::range_value_t<Container>>;
     const auto& elemConvInstance = getConverter<Elem>();
     using ElemConv = std::remove_cvref_t<decltype(elemConvInstance)>;
     static const ContainerConverter<Container, ElemConv> conv(elemConvInstance);
-    return JsonField<MemberPtrType, std::remove_cvref_t<decltype(conv)>>(memberPtr, keyName, std::cref(conv), req);
+    return JsonField<MemberPtrType, std::remove_cvref_t<decltype(conv)>>(
+        memberPtr, keyName, std::cref(conv), req);
 } 
 
 /// @brief 明示的な `ContainerConverter` を渡して `JsonField` を作成するオーバーロード。
 export template <typename MemberPtrType, typename Container, typename ElemConv>
-    requires std::is_member_object_pointer_v<MemberPtrType>
-        && std::same_as<MemberPointerValueType<MemberPtrType>, Container>
-        && IsContainer<Container>
-        && IsJsonConverter<ElemConv, std::remove_cvref_t<std::ranges::range_value_t<Container>>>
 constexpr auto makeJsonContainerField(MemberPtrType memberPtr, const char* keyName,
     const ContainerConverter<Container, ElemConv>& conv, bool req = false) {
+    static_assert(std::is_member_object_pointer_v<MemberPtrType>,
+        "makeJsonContainerField requires MemberPtrType to be a member object pointer");
+    static_assert(std::same_as<MemberPointerValueType<MemberPtrType>, Container>,
+        "Member pointer value must match Container");
+    static_assert(IsContainer<Container>,
+        "makeJsonContainerField requires Container to be a container type");
+    static_assert(IsJsonConverter<ElemConv, std::remove_cvref_t<std::ranges::range_value_t<Container>>>,
+        "ElemConv must be a JsonConverter for the container element type");
     return JsonField<MemberPtrType, std::remove_cvref_t<ContainerConverter<Container, ElemConv>>>(
         memberPtr, keyName, std::cref(conv), req);
 }
@@ -434,9 +439,9 @@ constexpr auto makeJsonContainerField(MemberPtrType memberPtr, const char* keyNa
 
 /// @brief unique_ptr 等のコンバータ
 export template <typename T, typename TargetConverter>
-    requires IsUniquePtr<T>
 struct UniquePtrConverter {
-    using Value = T;
+    static_assert(IsUniquePtr<T>, "UniquePtrConverter requires T to be a unique_ptr-like type");
+    using Value = T; 
     using Element = typename T::element_type;
     using ElemConvT = std::remove_cvref_t<TargetConverter>;
 
@@ -477,8 +482,8 @@ private:
 
 /// @brief unique_ptr<T>のjson変換方法を返す。
 export template <typename T>
-    requires IsUniquePtr<T>
 constexpr auto& getUniquePtrConverter() {
+    static_assert(IsUniquePtr<T>, "getUniquePtrConverter requires T to be a unique_ptr-like type");
     using TargetConverter = decltype(getConverter<typename T::element_type>());
     static const UniquePtrConverter<T, TargetConverter> inst{};
     return inst;
@@ -487,9 +492,11 @@ constexpr auto& getUniquePtrConverter() {
 /// @brief `unique_ptr` 型のメンバ用に `JsonField` を作成する（既定の要素コンバータを使用）。
 export template <typename MemberPtrType>
 constexpr auto makeJsonUniquePtrField(
-    MemberPtrType memberPtr, const char* keyName, bool req = false)
-    requires std::is_member_object_pointer_v<MemberPtrType>
-        && IsUniquePtr<MemberPointerValueType<MemberPtrType>> {
+    MemberPtrType memberPtr, const char* keyName, bool req = false) {
+    static_assert(std::is_member_object_pointer_v<MemberPtrType>,
+        "makeJsonUniquePtrField requires MemberPtrType to be a member object pointer");
+    static_assert(IsUniquePtr<MemberPointerValueType<MemberPtrType>>,
+        "makeJsonUniquePtrField requires member to be a unique_ptr-like type");
     using Ptr = MemberPointerValueType<MemberPtrType>;
     auto& converter = getUniquePtrConverter<Ptr>();
     return JsonField<MemberPtrType, std::remove_cvref_t<decltype(converter)>>(
@@ -498,10 +505,12 @@ constexpr auto makeJsonUniquePtrField(
 
 /// @brief `unique_ptr` 型のメンバ用に `JsonField` を作成する（要素コンバータを明示的に指定する版）。
 export template <typename MemberPtrType, typename PtrConv>
-    requires std::is_member_object_pointer_v<MemberPtrType>
-        && IsUniquePtr<MemberPointerValueType<MemberPtrType>>
 constexpr auto makeJsonUniquePtrField(
     MemberPtrType memberPtr, const char* keyName, const PtrConv& conv, bool req = false) {
+    static_assert(std::is_member_object_pointer_v<MemberPtrType>,
+        "makeJsonUniquePtrField requires MemberPtrType to be a member object pointer");
+    static_assert(IsUniquePtr<MemberPointerValueType<MemberPtrType>>,
+        "makeJsonUniquePtrField requires member to be a unique_ptr-like type");
     return JsonField<MemberPtrType, std::remove_cvref_t<PtrConv>>(
         memberPtr, keyName, std::cref(conv), req);
 }
@@ -510,8 +519,9 @@ constexpr auto makeJsonUniquePtrField(
 // ******************************************************************************** variant用変換方法
 
 export template <typename Variant>
-    requires IsStdVariant<Variant>
 struct VariantElementConverter {
+    static_assert(IsStdVariant<Variant>,
+        "VariantElementConverter requires Variant to be a std::variant");
     template<typename T>
     void write(JsonWriter& writer, const T& value) const {
         static const auto& conv = getConverter<std::remove_cvref_t<T>>();
@@ -577,7 +587,8 @@ private:
     static constexpr bool canAssign() noexcept {
         using U = std::remove_cvref_t<T>;
         return []<size_t... I>(std::index_sequence<I...>) {
-            return (std::is_same_v<U, std::remove_cvref_t<typename std::variant_alternative_t<I, Variant>>>
+            return (std::is_same_v<U, std::remove_cvref_t<
+                typename std::variant_alternative_t<I, Variant>>>
                 || ...);
         }(std::make_index_sequence<std::variant_size_v<Variant>>{});
     }
@@ -610,12 +621,11 @@ public:
 /// @brief `std::variant` を現在のトークンに基づいて読み書きするコンバータ。
 /// @tparam T 対象の variant 型
 export template <typename Variant, typename ElementConverter>
-    requires IsStdVariant<Variant>
 struct VariantConverter {
-    using Value = Variant;
+    static_assert(IsStdVariant<Variant>, "VariantConverter requires Variant to be a std::variant");
+    using Value = Variant; 
     using ElementConverterT = std::remove_cvref_t<ElementConverter>;
-    static_assert(std::is_base_of_v<VariantElementConverter<Variant>, ElementConverterT>
-        || std::is_same_v<ElementConverterT, VariantElementConverter<Variant>>,
+    static_assert(std::is_base_of_v<VariantElementConverter<Variant>, ElementConverterT>,
         "ElementConverter must be VariantElementConverter<Variant> or derived from it");
 
     VariantConverter(ElementConverter elementConverter)
@@ -666,26 +676,31 @@ private:
 
 /// @brief Variant 用の VariantConverter を構築するヘルパー（既定の ElementConverter を使用）。
 export template <typename Variant>
-    requires IsStdVariant<Variant>
 constexpr auto makeVariantConverter() {
+    static_assert(IsStdVariant<Variant>,
+        "makeVariantConverter requires Variant to be a std::variant");
     using ElemConv = VariantElementConverter<Variant>;
     return VariantConverter<Variant, ElemConv>(ElemConv{});
 }
 
 /// @brief Variant 用の VariantConverter を構築するヘルパー（明示的な ElementConverter を使用）。
 export template <typename Variant, typename ElemConv>
-    requires IsStdVariant<Variant>
-        && (std::is_base_of_v<VariantElementConverter<Variant>, std::remove_cvref_t<ElemConv>>
-        || std::is_same_v<std::remove_cvref_t<ElemConv>, VariantElementConverter<Variant>>)
 constexpr auto makeVariantConverter(ElemConv elemConv) {
+    static_assert(IsStdVariant<Variant>,
+        "makeVariantConverter requires Variant to be a std::variant");
+    static_assert(std::is_base_of_v<VariantElementConverter<Variant>, std::remove_cvref_t<ElemConv>>,
+        "ElemConv must be derived from VariantElementConverter<Variant>");
     return VariantConverter<Variant, std::remove_cvref_t<ElemConv>>(std::move(elemConv));
 }
 
 /// @brief `std::variant` 型のメンバ用に `JsonField` を作成するヘルパー（既定の `VariantConverter` を使用）。
 export template <typename MemberPtrType>
-constexpr auto makeJsonVariantField(MemberPtrType memberPtr, const char* keyName, bool req = false)
-    requires std::is_member_object_pointer_v<MemberPtrType>
-        && IsStdVariant<MemberPointerValueType<MemberPtrType>> {
+constexpr auto makeJsonVariantField(
+    MemberPtrType memberPtr, const char* keyName, bool req = false) {
+    static_assert(std::is_member_object_pointer_v<MemberPtrType>,
+        "makeJsonVariantField requires MemberPtrType to be a member object pointer");
+    static_assert(IsStdVariant<MemberPointerValueType<MemberPtrType>>,
+        "makeJsonVariantField requires member to be a std::variant");
     using Var = MemberPointerValueType<MemberPtrType>;
     static const auto converter = makeVariantConverter<Var>();
     return JsonField<MemberPtrType, std::remove_cvref_t<decltype(converter)>>(
@@ -771,12 +786,10 @@ private:
 
 /// @brief トークン種別に応じた分岐コンバータ（JsonTokenDispatchField と同等）
 export template <typename ValueType, typename TokenConv = TokenConverter<ValueType>>
-    requires std::same_as<ValueType, ValueType>
 struct TokenDispatchConverter {
-    using Value = ValueType;
+    using Value = ValueType; 
     using TokenConvT = std::remove_cvref_t<TokenConv>;
-    static_assert(std::is_base_of_v<TokenConverter<Value>, TokenConvT>
-        || std::is_same_v<TokenConvT, TokenConverter<Value>>,
+    static_assert(std::is_base_of_v<TokenConverter<Value>, TokenConvT>,
         "TokenConv must be TokenConverter<Value> or derived from it");
 
     // コンストラクタ（TokenConverter を受け取る）
@@ -809,10 +822,13 @@ private:
 /// @brief 汎用の `TokenDispatchConverter` を受け取って `JsonField` を作成するヘルパー。
 export template <typename MemberPtrType, typename Converter>
 constexpr auto makeJsonTokenDispatchField(MemberPtrType memberPtr, const char* keyName,
-    const Converter& conv, bool req = false)
-    requires std::is_member_object_pointer_v<MemberPtrType>
-        && requires { typename Converter::Value; }
-        && std::same_as<typename Converter::Value, MemberPointerValueType<MemberPtrType>> {
+    const Converter& conv, bool req = false) {
+    static_assert(std::is_member_object_pointer_v<MemberPtrType>,
+        "makeJsonTokenDispatchField requires MemberPtrType to be a member object pointer");
+    static_assert(requires { typename Converter::Value; },
+        "Converter must define nested type 'Value'");
+    static_assert(std::same_as<typename Converter::Value, MemberPointerValueType<MemberPtrType>>,
+        "Converter::Value must match the member's value type");
     return JsonField<MemberPtrType, std::remove_cvref_t<Converter>>(
         memberPtr, keyName, std::cref(conv), req);
 }
