@@ -184,7 +184,8 @@ TEST(JsonPolymorphicTest, ReadArrayCustomKeyAndNull) {
     original.arr.push_back(std::move(two));
     original.arr.push_back(nullptr);
 
-    testJsonRoundTrip(original, "{item:null,arr:[{kind:\"One\",x:1},{kind:\"Two\",s:\"abc\"},null]}");
+    testJsonRoundTrip(original,
+        "{item:null,arr:[{kind:\"One\",x:1},{kind:\"Two\",s:\"abc\"},null]}");
 }
 
 TEST(JsonPolymorphicTest, WriteAndReadRoundTripUsingCustomKey) {
@@ -513,41 +514,48 @@ struct DispatchValue {
 struct TokenDispatchHolder {
     DispatchValue value;
 
-    /// @brief JSONからの読み取り用エントリ配列を取得する。
-    /// @return FromJsonEntryの配列。
-    /// @note 配列添え字がJsonTokenTypeに対応する。
-    static const auto& getFromEntries() {
-        using V = DispatchValue;
-        static const std::array<FromJsonEntry<V>, JsonTokenTypeCount> entries = {{
-            nullptr,  // ストリーム終端 (EndOfStream)
-            nullptr,  // Null（ヌル）
-            [](JsonParser& p) -> V { bool b; p.readTo(b); return V{ b }; },  // Bool（真偽値）
-            [](JsonParser& p) -> V { int64_t i; p.readTo(i); return V{ i }; },  // Integer（整数）
-            nullptr,  // Number（数値）
-            [](JsonParser& p) -> V { std::string s; p.readTo(s); return V{ s }; },  // String（文字列）
-            nullptr,  // Key（オブジェクトのキー）
-            nullptr,  // StartObject（オブジェクト開始）
-            nullptr,  // EndObject（オブジェクト終了）
-            nullptr,  // StartArray（配列開始）
-            nullptr,  // EndArray
-            nullptr,  // Error
-        }};
-        return entries;
-    }
-
-    /// @brief JSONへの書き出し用コンバータ関数。
-    /// @param w JsonWriterの参照。
-    /// @param v 書き出す値。
-    static void toConverter(JsonWriter& w, const DispatchValue& v) {
-        std::visit([&w](const auto& val) {
-            w.writeObject(val);
-        }, v.data);
-    }
-
     const IJsonFieldSet& jsonFields() const {
-        static const auto entries = getFromEntries();
+        /// @brief テスト用の簡易トークンコンバータ。
+        /// 必要最小限のトークンハンドラだけを実装する。
+        struct FromConv : TokenConverter<DispatchValue>
+        {
+            /// @brief Bool トークンを読み取る。
+            DispatchValue readBool(JsonParser& p) const
+            {
+                bool b;
+                p.readTo(b);
+                return DispatchValue{ b };
+            }
+
+            /// @brief Integer トークンを読み取る。
+            DispatchValue readInteger(JsonParser& p) const
+            {
+                int64_t i;
+                p.readTo(i);
+                return DispatchValue{ i };
+            }
+
+            /// @brief String トークンを読み取る。
+            DispatchValue readString(JsonParser& p) const
+            {
+                std::string s;
+                p.readTo(s);
+                return DispatchValue{ s };
+            }
+
+            /// @brief 値を JSON に書き出す。
+            void write(JsonWriter& w, const DispatchValue& v) const
+            {
+                std::visit([&w](const auto& val) {
+                    w.writeObject(val);
+                }, v.data);
+            }
+        };
+
+        auto tokenConv = FromConv();
+        static const TokenDispatchConverter<DispatchValue, FromConv> conv(tokenConv);
         static const auto fields = makeJsonFieldSet<TokenDispatchHolder>(
-            makeJsonTokenDispatchField(&TokenDispatchHolder::value, "value", entries, toConverter)
+            makeJsonTokenDispatchField(&TokenDispatchHolder::value, "value", conv)
         );
         return fields;
     }
@@ -959,9 +967,12 @@ TEST(JsonElementConverterTest, NestedContainerUsesElementConverter)
         std::vector<std::vector<RWElement>> v;
         const IJsonFieldSet& jsonFields() const {
             // Explicitly construct nested container converter: inner element -> JsonFieldsConverter<RWElement>
-            static const JsonFieldsConverter<RWElement> innerElemConv{};
-            static const ContainerConverter<std::vector<RWElement>, JsonFieldsConverter<RWElement>> innerConv(innerElemConv);
-            static const ContainerConverter<std::vector<std::vector<RWElement>>, decltype(innerConv)> conv(innerConv);
+            using Converter = JsonFieldsConverter<RWElement>;
+            static const Converter innerElemConv{};
+            using RWElementVector = std::vector<RWElement>;
+            static const ContainerConverter<RWElementVector, Converter> innerConv(innerElemConv);
+            static const ContainerConverter<std::vector<RWElementVector>, decltype(innerConv)>
+                conv(innerConv);
             static const auto fields = makeJsonFieldSet<Holder>(
                 makeJsonContainerField(&Holder::v, "v", conv)
             );

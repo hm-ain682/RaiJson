@@ -695,82 +695,127 @@ constexpr auto makeJsonVariantField(MemberPtrType memberPtr, const char* keyName
 
 // ******************************************************************************** トークン種別毎の分岐用
 
-/// @brief JsonTokenTypeの総数。
-/// @note この値はJsonTokenType enumの要素数と一致している必要がある。
-export inline constexpr std::size_t JsonTokenTypeCount = 12;
-
-/// @brief JSONからの読み取り用コンバータ型。
-/// @tparam ValueType 変換対象の値型。
-/// @note 配列添え字がJsonTokenTypeに対応する。
+/// @brief トークン種別ごとの読み取り／書き出しを提供する基底的なコンバータ
 export template <typename ValueType>
-using FromJsonEntry = std::function<ValueType(JsonParser&)>;
-
-/// @brief トークン種別に応じた分岐コンバータ（JsonTokenDispatchField と同等）
-export template <typename ValueType>
-struct TokenDispatchConverter {
+struct TokenConverter {
     using Value = ValueType;
-    using ToConverter = std::function<void(JsonWriter&, const ValueType&)>;
 
-    template <std::size_t FromN>
-    explicit TokenDispatchConverter(const std::array<FromJsonEntry<ValueType>, FromN>& fromEntries,
-        ToConverter toConverter = defaultToConverter())
-        : toConverter_(std::move(toConverter)) {
-        static_assert(FromN <= 12);
-        for (std::size_t i = 0; i < 12; ++i) {
-            fromEntries_[i] = [](JsonParser&) -> ValueType {
-                throw std::runtime_error("No converter found for token type");
-            };
+    // 読み取り（各トークン種別ごとにオーバーライド可能）
+    Value readNull(JsonParser& parser) const {
+        if constexpr (std::is_constructible_v<Value, std::nullptr_t>) {
+            parser.skipValue();
+            return Value(nullptr);
         }
-        for (std::size_t i = 0; i < FromN; ++i) {
-            if (fromEntries[i]) {
-                fromEntries_[i] = fromEntries[i];
-            }
+        else {
+            throw std::runtime_error("Null is not supported for TokenConverter");
         }
     }
 
+    Value readBool(JsonParser& parser) const {
+        return this->template read<bool>(parser, "Bool is not supported for TokenConverter");
+    }
+
+    Value readInteger(JsonParser& parser) const {
+        return this->template read<int>(parser, "Integer is not supported for TokenConverter");
+    }
+
+    Value readNumber(JsonParser& parser) const {
+        return this->template read<double>(parser, "Number is not supported for TokenConverter");
+    }
+
+    Value readString(JsonParser& parser) const {
+        return this->template read<std::string>(parser, "String is not supported for TokenConverter");
+    }
+
+    Value readStartObject(JsonParser& parser) const {
+        if constexpr (HasJsonFields<Value> || (HasReadJson<Value> && HasWriteJson<Value>)) {
+            return getConverter<Value>().read(parser);
+        }
+        else {
+            throw std::runtime_error("Object is not supported for TokenConverter");
+        }
+    }
+
+    Value readStartArray(JsonParser& parser) const {
+        // デフォルトでは配列はサポートしない（必要なら派生で実装）
+        throw std::runtime_error("Array is not supported for TokenConverter");
+    }
+private:
+    template <typename T>
+    static constexpr Value read(JsonParser& parser, const char* errorMessage) {
+        if constexpr (std::is_constructible_v<Value, T>) {
+            T s;
+            parser.readTo(s);
+            return Value(s);
+        }
+        else {
+            throw std::runtime_error(errorMessage);
+        }
+    }
+
+    // 書き出し（オーバーライド可能）
+    void write(JsonWriter& writer, const Value& value) const {
+        // Default: try direct writer or getConverter if available
+        if constexpr (requires { writer.writeObject(value); }) {
+            writer.writeObject(value);
+        }
+        else if constexpr (HasJsonFields<Value> || (HasReadJson<Value> && HasWriteJson<Value>)) {
+            getConverter<Value>().write(writer, value);
+        }
+        else {
+            static_assert(std::is_same_v<Value, void>,
+                "TokenConverter::write: unsupported Value type");
+        }
+    }
+};
+
+/// @brief トークン種別に応じた分岐コンバータ（JsonTokenDispatchField と同等）
+export template <typename ValueType, typename TokenConv = TokenConverter<ValueType>>
+    requires std::same_as<ValueType, ValueType>
+struct TokenDispatchConverter {
+    using Value = ValueType;
+    using TokenConvT = std::remove_cvref_t<TokenConv>;
+    static_assert(std::is_base_of_v<TokenConverter<Value>, TokenConvT>
+        || std::is_same_v<TokenConvT, TokenConverter<Value>>,
+        "TokenConv must be TokenConverter<Value> or derived from it");
+
+    // コンストラクタ（TokenConverter を受け取る）
+    constexpr explicit TokenDispatchConverter(const TokenConvT& conv = TokenConvT())
+        : tokenConverter_(conv) {}
+
     /// @brief トークン種別に応じて適切な変換関数を呼び出して値を読み取る。
     ValueType read(JsonParser& parser) const {
-        std::size_t index = static_cast<std::size_t>(parser.nextTokenType());
-        return fromEntries_[index](parser);
+        switch (parser.nextTokenType()) {
+        case JsonTokenType::Null:        return tokenConverter_.readNull(parser);
+        case JsonTokenType::Bool:        return tokenConverter_.readBool(parser);
+        case JsonTokenType::Integer:     return tokenConverter_.readInteger(parser);
+        case JsonTokenType::Number:      return tokenConverter_.readNumber(parser);
+        case JsonTokenType::String:      return tokenConverter_.readString(parser);
+        case JsonTokenType::StartObject: return tokenConverter_.readStartObject(parser);
+        case JsonTokenType::StartArray:  return tokenConverter_.readStartArray(parser);
+        default: throw std::runtime_error("Unsupported token type");
+        }
     }
 
     /// @brief 値を JSON に書き出すための関数を呼び出す。
     void write(JsonWriter& writer, const ValueType& value) const {
-        toConverter_(writer, value);
-    }
-
-    void setToConverter(ToConverter toConverter) { toConverter_ = std::move(toConverter); }
-
-    static ToConverter defaultToConverter() {
-        return [](JsonWriter& writer, const ValueType& value) { writer.writeObject(value); };
+        tokenConverter_.write(writer, value);
     }
 
 private:
-    std::array<std::function<ValueType(JsonParser&)>, 12> fromEntries_{};
-    ToConverter toConverter_{};
+    TokenConvT tokenConverter_{};
 };
 
-/// @brief 外部で管理される `TokenDispatchConverter` を用いて `JsonField` を作成する（コンバータはフィールドより長く存続する必要があります）。
-export template <typename MemberPtrType, typename ValueType>
+/// @brief 汎用の `TokenDispatchConverter` を受け取って `JsonField` を作成するヘルパー。
+export template <typename MemberPtrType, typename Converter>
 constexpr auto makeJsonTokenDispatchField(MemberPtrType memberPtr, const char* keyName,
-    const TokenDispatchConverter<ValueType>& conv, bool req = false)
-    requires std::same_as<ValueType, MemberPointerValueType<MemberPtrType>> {
-    return JsonField<MemberPtrType, TokenDispatchConverter<ValueType>>(
+    const Converter& conv, bool req = false)
+    requires std::is_member_object_pointer_v<MemberPtrType>
+        && requires { typename Converter::Value; }
+        && std::same_as<typename Converter::Value, MemberPointerValueType<MemberPtrType>> {
+    return JsonField<MemberPtrType, std::remove_cvref_t<Converter>>(
         memberPtr, keyName, std::cref(conv), req);
 }
 
-/// @brief `FromJsonEntry` 配列から `TokenDispatchConverter` を構築し、対応する `JsonField` を返す便宜オーバーロード。
-export template <typename MemberPtrType, typename ValueType, std::size_t FromN>
-constexpr auto makeJsonTokenDispatchField(MemberPtrType memberPtr, const char* keyName,
-    const std::array<FromJsonEntry<ValueType>, FromN>& fromEntries,
-    typename TokenDispatchConverter<ValueType>::ToConverter toConverter
-    = TokenDispatchConverter<ValueType>::defaultToConverter(),
-    bool req = false) requires std::same_as<ValueType, MemberPointerValueType<MemberPtrType>> {
-    static_assert(FromN <= 12);
-    // 補足: conv は 'fromEntries' から構築した静的データを参照するため、返される JsonField より長い寿命を持つ必要があります
-    static const TokenDispatchConverter<ValueType> conv(fromEntries, toConverter);
-    return JsonField<MemberPtrType, TokenDispatchConverter<ValueType>>(
-        memberPtr, keyName, std::cref(conv), req);
-}
 
 }  // namespace rai::json
