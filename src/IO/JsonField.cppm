@@ -23,6 +23,7 @@ module;
 #include <vector>
 #include <set>
 #include <unordered_set>
+#include <span>
 
 export module rai.json.json_field;
 
@@ -236,9 +237,11 @@ export template <typename EnumType, std::size_t N>
 struct JsonEnumMap {
     using Enum = EnumType;
 
-    /// @brief コンストラクタ（配列から構築）
-    /// @param entries EnumEntry の配列
-    constexpr explicit JsonEnumMap(const EnumEntry<Enum> (&entries)[N]) {
+    /// @brief std::span ベースのコンストラクタ（C配列やstd::arrayからの変換を受け取ります）
+    constexpr explicit JsonEnumMap(std::span<const EnumEntry<Enum>> entries) {
+        if (entries.size() != N) {
+            throw std::runtime_error("JsonEnumMap(span): size must match template parameter N");
+        }
         std::pair<std::string_view, Enum> nv[N];
         for (std::size_t i = 0; i < N; ++i) {
             nv[i] = { entries[i].name, entries[i].value };
@@ -306,9 +309,21 @@ private:
     MapType map_{};
 };
 
-/// @brief `EnumEntry` 配列から `JsonEnumMap` を構築するヘルパー。
+/// @brief C 配列から JsonEnumMap を構築する。
 export template <typename Enum, std::size_t N>
 constexpr auto makeJsonEnumMap(const EnumEntry<Enum> (&entries)[N]) {
+    return JsonEnumMap<Enum, N>(std::span<const EnumEntry<Enum>, N>(entries));
+}
+
+/// @brief array から JsonEnumMap を構築する。
+export template <typename Enum, std::size_t M>
+constexpr auto makeJsonEnumMap(const std::array<EnumEntry<Enum>, M>& entries) {
+    return JsonEnumMap<Enum, M>(std::span<const EnumEntry<Enum>, M>(entries.data(), M));
+}
+
+/// @brief spanから JsonEnumMap を構築する。
+export template <typename Enum, std::size_t N>
+constexpr auto makeJsonEnumMap(std::span<const EnumEntry<Enum>, N> entries) {
     return JsonEnumMap<Enum, N>(entries);
 }
 

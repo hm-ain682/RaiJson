@@ -35,6 +35,26 @@ struct CH {
     }
 };
 
+struct CH2 {
+    Color color = Color::Red;
+
+    const IJsonFieldSet& jsonFields() const {
+        static const auto colorMap = rai::json::makeJsonEnumMap<Color>({
+            { Color::Red,   "red" },
+            { Color::Green, "green" },
+            { Color::Blue,  "blue" }
+        });
+        static const auto fields = makeJsonFieldSet<CH2>(
+            rai::json::makeJsonEnumField(&CH2::color, "color", colorMap)
+        );
+        return fields;
+    }
+
+    bool equals(const CH2& o) const {
+        return color == o.color;
+    }
+};
+
 TEST(JsonEnumFieldStandalone, RoundTripWithHelper) {
     CH ch;
     ch.color = Color::Green;
@@ -46,4 +66,15 @@ TEST(JsonEnumFieldStandalone, ReadUnknownValueThrows) {
     const std::string badJson = "{color:\"purple\"}";
     CH out{};
     EXPECT_THROW(readJsonString(badJson, out), std::runtime_error);
+}
+
+TEST(JsonEnumFieldStandalone, RoundTripWithVariadicHelper) {
+    CH2 ch;
+    ch.color = Color::Green;
+    testJsonRoundTrip(ch, "{color:\"green\"}");
+}
+
+TEST(JsonEnumFieldStandalone, ReadUnknownValueThrowsWithVariadicHelper) {
+    CH2 out{};
+    EXPECT_THROW(readJsonString("{color:\"purple\"}", out), std::runtime_error);
 }
