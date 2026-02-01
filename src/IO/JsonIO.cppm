@@ -36,7 +36,10 @@ static constexpr std::size_t aheadSize = 8;        //< 先読み8byte
 export template <HasJsonFields T>
 void writeJsonToBuffer(const T& obj, std::ostream& os) {
     JsonWriter writer(os);
-    writeJsonObject(writer, obj);
+    auto& fields = obj.jsonFields();
+    writer.startObject();
+    fields.writeFieldsOnly(writer, &obj);
+    writer.endObject();
 }
 
 /// @brief 任意の型のオブジェクトをJSON形式で文字列化して返す。
@@ -67,6 +70,20 @@ void writeJsonFile(const T& obj, const std::string& filename) {
     if (ofs.bad()) {
         throw std::runtime_error("writeJsonToFile: Error writing to file " + filename);
     }
+}
+
+/// @brief オブジェクトをJSONから読み込む（startObject/endObject含む）。
+/// @tparam T HasJsonFieldsを実装している型。
+/// @param parser 読み取り元のJsonParser互換オブジェクト。
+/// @param obj 読み込み先のオブジェクト。
+/// @note トップレベルのJSON読み込み用のヘルパー関数。
+export template <HasJsonFields T>
+void readJsonObject(JsonParser& parser, T& obj) {
+    auto& fields = obj.jsonFields();
+    // Delegate full object parsing (including defaults and required checks)
+    parser.startObject();
+    fields.readObject(parser, &obj);
+    parser.endObject();
 }
 
 /// @brief 文字列バッファからオブジェクトを読み込む（コア関数）。

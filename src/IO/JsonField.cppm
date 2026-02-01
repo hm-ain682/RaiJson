@@ -83,11 +83,11 @@ concept IsJsonConverter = std::is_class_v<Converter>
 export template <typename Behavior, typename Value>
 concept IsJsonFieldOmittedBehavior = requires(
     const Behavior& behavior,
-    const Value& value) {
+    const Value& value,
+    Value& outValue,
+    std::string_view key) {
     { behavior.shouldSkipWrite(value) } -> std::same_as<bool>;
-    { behavior.isRequired() } -> std::same_as<bool>;
-    { behavior.hasDefault() } -> std::same_as<bool>;
-    { behavior.makeDefault() } -> std::same_as<Value>;
+    { behavior.applyMissing(outValue, key) } -> std::same_as<void>;
 };
 
 /// @brief JsonFieldの省略時挙動の既定実装。
@@ -108,25 +108,20 @@ struct JsonFieldDefaultOmittedBehavior {
         return false;
     }
 
-    /// @brief 必須かどうかを返す。
-    /// @return 必須なら true
-    bool isRequired() const {
-        return required;
-    }
-
-    /// @brief 既定値があるかを返す。
-    /// @return 既定値があるなら true
-    bool hasDefault() const {
-        return defaultValue.has_value();
-    }
-
-    /// @brief 既定値を生成して返す。
-    /// @return 既定値
-    ValueType makeDefault() const {
-        // ムーブ専用型の既定値は一度だけ使用可能なため、消費後に無効化する
-        ValueType out = std::move(*defaultValue);
-        defaultValue.reset();
-        return out;
+    /// @brief 欠落時の挙動を適用する。
+    /// @param outValue 欠落時に代入する対象
+    /// @param key 対象キー名
+    void applyMissing(ValueType& outValue, std::string_view key) const {
+        if (required) {
+            throw std::runtime_error(
+                std::string("JsonParser: missing required key '") +
+                std::string(key) + "'");
+        }
+        if (defaultValue) {
+            // ムーブ専用型の既定値は一度だけ使用可能なため、消費後に無効化する
+            outValue = std::move(*defaultValue);
+            defaultValue.reset();
+        }
     }
 };
 
@@ -234,13 +229,6 @@ struct JsonField {
                         "JsonField requires non-reference_wrapper Converter for this constructor");
         }
 
-    /// @brief 値を JSON に書き込む。
-    /// @param writer 書き込み先の JsonWriter
-    /// @param value 書き込む値
-    void write(JsonWriter& writer, const ValueType& value) const {
-        converterRef.get().write(writer, value);
-    }
-
     /// @brief JSON から値を読み取る。
     /// @param parser 読み取り元の JsonParser
     /// @return 変換された値
@@ -256,25 +244,13 @@ struct JsonField {
             return;
         }
         writer.key(key);
-        write(writer, value);
+        converterRef.get().write(writer, value);
     }
 
-    /// @brief 必須フィールドかどうかを返す。
-    /// @return 必須なら true
-    bool isRequired() const {
-        return omittedBehavior.isRequired();
-    }
-
-    /// @brief 既定値があるかどうかを返す。
-    /// @return 既定値があるなら true
-    bool hasDefault() const {
-        return omittedBehavior.hasDefault();
-    }
-
-    /// @brief 既定値を生成して返す。
-    /// @return 既定値
-    ValueType makeDefault() const {
-        return omittedBehavior.makeDefault();
+    /// @brief 欠落時の挙動を適用する。
+    /// @param outValue 欠落時に代入する対象
+    void applyMissing(ValueType& outValue) const {
+        omittedBehavior.applyMissing(outValue, key);
     }
 
     MemberPtrType member{};                               ///< メンバポインタ

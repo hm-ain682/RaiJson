@@ -34,9 +34,9 @@ namespace rai::json {
 
 /// @brief JSONフィールドセットの型消去用インターフェース。
 /// @note 仮想関数の戻り値型として使用可能にするための基底クラス。
-export class JsonFieldSetBase {
+export class IJsonFieldSet {
 public:
-    virtual ~JsonFieldSetBase() = default;
+    virtual ~IJsonFieldSet() = default;
 
     /// @brief オブジェクトのフィールドのみを書き出す（startObject/endObjectなし）。
     /// @param writer 書き込み先のJsonWriter。
@@ -51,15 +51,13 @@ public:
     virtual void readObject(JsonParser& parser, void* obj) const = 0;
 };
 
-export using IJsonFieldSet = JsonFieldSetBase;
-
 // ******************************************************************************** フィールドセット
 
 /// @brief JSONフィールドセットの実装クラス。
 /// @tparam Owner 所有者型。
 /// @tparam Fields フィールド型のパラメータパック。
 export template <typename Owner, typename... Fields>
-class JsonFieldSetBody : public JsonFieldSetBase {
+class JsonFieldSetBody : public IJsonFieldSet {
 private:
     // static_assertをメンバー関数に移動して遅延評価させる
     static constexpr void validateFields() {
@@ -76,11 +74,11 @@ public:
 
         // Build a small array of key/value descriptors from the stored fields_
         // so SortedHashArrayMap can be constructed from elements that have
-        // .key and .value members (we map JsonField::isRequired() -> value here).
+        // .key and .value members (valueは探索用のダミーで未使用)。
         using KV = std::pair<std::string_view, bool>;
         auto buildArr = [&]<std::size_t... I>(std::index_sequence<I...>) {
             std::array<KV, N_> arr{};
-            ((arr[I] = KV{ std::get<I>(fields_).key, std::get<I>(fields_).isRequired() }), ...);
+            ((arr[I] = KV{ std::get<I>(fields_).key, false }), ...);
             return arr;
         };
 
@@ -123,7 +121,7 @@ private:
         std::bitset<N> seen{};
         while (!parser.nextIsEndObject()) {
             std::string k = parser.nextKey();
-            auto foundIndex = findFieldIndex(k);
+            auto foundIndex = fieldMap_.findIndex(k);
             if (!foundIndex) {
                 parser.noteUnknownKey(k);
                 parser.skipValue();
@@ -147,14 +145,7 @@ private:
             if (seen[index]) {
                 return; // 読み込み済み。
             }
-            if (field.isRequired()) {
-                throw std::runtime_error(
-                    std::string("JsonParser: missing required key '") + field.key + "'");
-            }
-            if (field.hasDefault()) {
-                auto v = field.makeDefault();
-                obj.*(field.member) = std::move(v);
-            }
+            field.applyMissing(obj.*(field.member));
         });
     }
 
@@ -167,22 +158,6 @@ public:
     }
 
 private:
-    /// @brief 指定インデックスが必須かどうかを判定する。
-    /// @param index フィールドの元インデックス。
-    /// @return 必須フィールドならtrue。
-    bool isFieldRequired(std::size_t index) const {
-        bool result = false;
-        visitField(index, [&](const auto& field) { result = field.isRequired(); });
-        return result;
-    }
-
-    /// @brief 指定キーに対応するフィールドを探索する。
-    /// @param key 探索するキー名。
-    /// @return 見つかった場合はフィールドの元インデックス、未検出時はstd::nullopt。
-    std::optional<std::size_t> findFieldIndex(std::string_view key) const {
-        return fieldMap_.findIndex(key);
-    }
-
     /// @brief 指定インデックスのフィールドにアクセスする。
     /// @param index 対象フィールドの元インデックス。
     /// @param visitor フィールドを受け取るファンクタ。引数にJsonField&を取る必要がある。
@@ -280,35 +255,6 @@ constexpr auto makeJsonFieldSet(Fields... fields) {
     static_assert(sizeof...(Fields) > 0, "makeJsonFieldSet requires explicit Owner when no fields are specified");
     using Owner = typename DeduceOwnerType<typename std::remove_cvref_t<Fields>::OwnerType...>::type;
     return makeJsonFieldSet<Owner>(std::move(fields)...);
-}
-
-// ******************************************************************************** トップレベル読み書きヘルパー関数
-
-/// @brief オブジェクトをJSON形式で書き出す（startObject/endObject含む）。
-/// @tparam T HasJsonFieldsを実装している型。
-/// @param writer 書き込み先のJsonWriter。
-/// @param obj 書き出す対象のオブジェクト。
-/// @note トップレベルのJSON書き出し用のヘルパー関数。
-export template <HasJsonFields T>
-void writeJsonObject(JsonWriter& writer, const T& obj) {
-    auto& fields = obj.jsonFields();
-    writer.startObject();
-    fields.writeFieldsOnly(writer, &obj);
-    writer.endObject();
-}
-
-/// @brief オブジェクトをJSONから読み込む（startObject/endObject含む）。
-/// @tparam T HasJsonFieldsを実装している型。
-/// @param parser 読み取り元のJsonParser互換オブジェクト。
-/// @param obj 読み込み先のオブジェクト。
-/// @note トップレベルのJSON読み込み用のヘルパー関数。
-export template <HasJsonFields T>
-void readJsonObject(JsonParser& parser, T& obj) {
-    auto& fields = obj.jsonFields();
-    // Delegate full object parsing (including defaults and required checks)
-    parser.startObject();
-    fields.readObject(parser, &obj);
-    parser.endObject();
 }
 
 }  // namespace rai::json
