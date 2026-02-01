@@ -248,11 +248,15 @@ struct JsonField {
         return converterRef.get().read(parser);
     }
 
-    /// @brief 指定した値と等しい場合に書き出しを省略するかどうかを返す。
-    /// @param value チェックする値
-    /// @return 省略すべきなら true
-    bool shouldSkipWrite(const ValueType& value) const {
-        return omittedBehavior.shouldSkipWrite(value);
+    /// @brief JSON項目（キーと値）を書き出す。
+    /// @param writer 書き込み先の JsonWriter
+    /// @param value 書き込む値
+    void writeKeyValue(JsonWriter& writer, const ValueType& value) const {
+        if (omittedBehavior.shouldSkipWrite(value)) {
+            return;
+        }
+        writer.key(key);
+        write(writer, value);
     }
 
     /// @brief 必須フィールドかどうかを返す。
@@ -372,13 +376,7 @@ struct JsonFieldsConverter {
         T obj{};
         auto& fields = obj.jsonFields();
         parser.startObject();
-        while (!parser.nextIsEndObject()) {
-            std::string key = parser.nextKey();
-            if (!fields.readFieldByKey(parser, &obj, key)) {
-                parser.noteUnknownKey(key);
-                parser.skipValue();
-            }
-        }
+        fields.readObject(parser, &obj);
         parser.endObject();
         return obj;
     }

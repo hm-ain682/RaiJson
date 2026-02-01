@@ -44,18 +44,11 @@ public:
     /// @note ポリモーフィック型の書き出し時に使用する。
     virtual void writeFieldsOnly(JsonWriter& writer, const void* obj) const = 0;
 
-    /// @brief オブジェクト全体の読み込みを行う（startObject/endObject を含む）。
+    /// @brief オブジェクト全体の読み込みを行う。
     /// @param parser 読み取り元の JsonParser
     /// @param obj 対象オブジェクトの void* ポインタ
+    /// @note startObject/endObject は呼び出し側で処理してください。
     virtual void readObject(JsonParser& parser, void* obj) const = 0;
-
-    /// @brief JSONキーに対応するフィールドを読み込む（startObject/endObjectなし）。
-    /// @param parser 読み取り元のJsonParserオブジェクト。
-    /// @param obj 対象オブジェクトのvoidポインタ。
-    /// @param key 読み込むフィールドのキー名。
-    /// @return フィールドが見つかって読み込まれた場合はtrue、見つからない場合はfalse。
-    /// @note ポリモーフィック型の読み込み時に使用する。
-    virtual bool readFieldByKey(JsonParser& parser, void* obj, std::string_view key) const = 0;
 };
 
 export using IJsonFieldSet = JsonFieldSetBase;
@@ -114,17 +107,8 @@ public:
         const Owner* owner = static_cast<const Owner*>(obj);
         forEachField([&](std::size_t, const auto& field) {
             const auto& value = owner->*(field.member);
-
-            // 指定された値と等しい場合は書き出しを省略
-            if (field.shouldSkipWrite(value)) {
-                return; // continue
-            }
-
-            writer.key(field.key);
-            using FieldType = std::remove_cvref_t<decltype(field)>;
-
             // デフォルトの toJson に委譲（明示的な分岐不要）
-            field.write(writer, value);
+            field.writeKeyValue(writer, value);
         });
     }
 
@@ -133,7 +117,7 @@ private:
     /// @brief オブジェクトのフィールドをJSONから読み込む（startObject/endObject済み）。
     /// @param parser 読み取り元のJsonParser互換オブジェクト。
     /// @param obj 対象オブジェクト。
-    /// @note jsonFields()が返すJsonFieldSetBaseのreadFieldByKeyメソッドを使用する。
+    /// @note JsonFieldSetBody内でフィールド探索と読み込みを行う。
     void readObjectFields(JsonParser& parser, Owner& obj) const {
         constexpr std::size_t N = sizeof...(Fields);
         std::bitset<N> seen{};
@@ -176,37 +160,10 @@ private:
 
     // ************************************************************************** JSONフィールド操作
 public:
-    /// @brief JSONキーに対応するフィールドを読み込む。
-    /// @param parser 読み取り元のJsonParser互換オブジェクト。
-    /// @param obj 対象オブジェクトのvoidポインタ。
-    /// @param key 読み込むフィールドのキー名。
-    /// @return フィールドが見つかって読み込まれた場合はtrue、見つからない場合はfalse。
-    /// @note ポリモーフィック型の読み込み時に使用する。
-    /// @brief オブジェクト全体の読み込み（startObject/endObjectを含む）。
+    /// @brief オブジェクト全体の読み込み（startObject/endObjectは呼び出し側が処理）。
     void readObject(JsonParser& parser, void* obj) const override {
         Owner* owner = static_cast<Owner*>(obj);
-        parser.startObject();
         readObjectFields(parser, *owner);
-        parser.endObject();
-    }
-
-    bool readFieldByKey(JsonParser& parser, void* obj, std::string_view key) const override {
-        Owner* owner = static_cast<Owner*>(obj);
-        auto foundIndex = findFieldIndex(key);
-        if (!foundIndex) {
-            return false;
-        }
-
-        const std::size_t fieldIndex = *foundIndex;
-        visitField(fieldIndex, [&](const auto& field) {
-            using FieldType = std::remove_cvref_t<decltype(field)>;
-            using ValueType = typename FieldType::ValueType;
-
-            // デフォルトの fromJson に委譲（明示的な分岐不要）
-            owner->*(field.member) = field.read(parser);
-        });
-
-        return true;
     }
 
 private:
@@ -349,7 +306,9 @@ export template <HasJsonFields T>
 void readJsonObject(JsonParser& parser, T& obj) {
     auto& fields = obj.jsonFields();
     // Delegate full object parsing (including defaults and required checks)
+    parser.startObject();
     fields.readObject(parser, &obj);
+    parser.endObject();
 }
 
 }  // namespace rai::json

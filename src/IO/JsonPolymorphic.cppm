@@ -99,14 +99,7 @@ PtrType readPolymorphicInstance(
     if constexpr (HasJsonFields<BaseType>) {
         auto& fields = instance->jsonFields();
         BaseType* raw = std::to_address(instance);
-        while (!parser.nextIsEndObject()) {
-            std::string key = parser.nextKey();
-            if (!fields.readFieldByKey(parser, raw, key)) {
-                // 未知のキーはスキップ
-                parser.noteUnknownKey(key);
-                parser.skipValue();
-            }
-        }
+        fields.readObject(parser, raw);
     }
     else {
         // jsonFieldsを持たない型の場合、全フィールドをスキップ
