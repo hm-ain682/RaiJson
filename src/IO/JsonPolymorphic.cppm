@@ -190,40 +190,33 @@ private:
 };
 
 // Convenience factory: build a JsonField (with a static PolymorphicConverter) from an entries map
-export template <typename MemberPtrType, typename MapType, bool Required = true>
+export template <typename MemberPtrType, typename MapType>
 constexpr auto makeJsonPolymorphicField(MemberPtrType memberPtr, const char* keyName,
     const MapType& entries, const char* jsonKey = "type")
     requires IsSmartOrRawPointer<MemberPointerValueType<MemberPtrType>> {
     using Value = MemberPointerValueType<MemberPtrType>;
     static const PolymorphicConverter<Value> conv(entries, jsonKey);
-    if constexpr (Required) {
-        using Behavior = RequiredFieldOmitBehavior<Value>;
-        return JsonField<MemberPtrType, PolymorphicConverter<Value>, Behavior>(
-            memberPtr, keyName, std::cref(conv), Behavior{});
-    }
-    else {
-        using Behavior = DefaultFieldOmitBehavior<Value>;
-        return JsonField<MemberPtrType, PolymorphicConverter<Value>, Behavior>(
-            memberPtr, keyName, std::cref(conv), Behavior{});
-    }
+    using Behavior = RequiredFieldOmitBehavior<Value>;
+    return JsonField<MemberPtrType, PolymorphicConverter<Value>, Behavior>(
+        memberPtr, keyName, std::cref(conv), Behavior{});
 }
 
 // Overload for SortedHashArrayMap-style entries
-export template <typename MemberPtrType, size_t N, typename Traits, bool Required = true>
+export template <typename MemberPtrType, size_t N, typename Traits>
 constexpr auto makeJsonPolymorphicField(MemberPtrType memberPtr, const char* keyName,
     const collection::SortedHashArrayMap<std::string_view,
         PolymorphicTypeFactory<MemberPointerValueType<MemberPtrType>>, N, Traits>& entries,
     const char* jsonKey = "type") {
     using MapRef = collection::MapReference<std::string_view,
         PolymorphicTypeFactory<MemberPointerValueType<MemberPtrType>>>;
-    return makeJsonPolymorphicField<MemberPtrType, MapRef, Required>(
+    return makeJsonPolymorphicField<MemberPtrType, MapRef>(
         memberPtr, keyName, MapRef(entries), jsonKey);
 } 
 
 // JsonPolymorphicField and JsonPolymorphicArrayField have been removed. Use the converter-based helpers (makeJsonPolymorphicField / makeJsonPolymorphicArrayField) instead.
 
 /// @brief ポリモーフィックな配列（vector<std::unique_ptr<BaseType>>）用のファクトリ helper
-export template <typename MemberPtrType, typename MapType, bool Required = true>
+export template <typename MemberPtrType, typename MapType>
 constexpr auto makeJsonPolymorphicArrayField(MemberPtrType memberPtr, const char* keyName,
     const MapType& entries, const char* jsonKey = "type") {
     using Container = MemberPointerValueType<MemberPtrType>;
@@ -231,19 +224,12 @@ constexpr auto makeJsonPolymorphicArrayField(MemberPtrType memberPtr, const char
     static const PolymorphicConverter<ElementPtr> elemConv(entries, jsonKey);
     using ContainerConv = ContainerConverter<Container, PolymorphicConverter<ElementPtr>>;
     static const ContainerConv conv(elemConv);
-    if constexpr (Required) {
-        using Behavior = RequiredFieldOmitBehavior<Container>;
-        return JsonField<MemberPtrType, ContainerConv, Behavior>(
-            memberPtr, keyName, std::cref(conv), Behavior{});
-    }
-    else {
-        using Behavior = DefaultFieldOmitBehavior<Container>;
-        return JsonField<MemberPtrType, ContainerConv, Behavior>(
-            memberPtr, keyName, std::cref(conv), Behavior{});
-    }
+    using Behavior = RequiredFieldOmitBehavior<Container>;
+    return JsonField<MemberPtrType, ContainerConv, Behavior>(
+        memberPtr, keyName, std::cref(conv), Behavior{});
 }
 // Convenience factory: build a JsonField for a container of polymorphic pointer elements
-export template <typename MemberPtrType, typename MapType, bool Required = true>
+export template <typename MemberPtrType, typename MapType>
 constexpr auto makeJsonPolymorphicArrayField(MemberPtrType memberPtr, const char* keyName,
     const MapType& entries, const char* jsonKey = "type")
     requires IsContainer<MemberPointerValueType<MemberPtrType>>
@@ -254,16 +240,9 @@ constexpr auto makeJsonPolymorphicArrayField(MemberPtrType memberPtr, const char
     static const PolymorphicConverter<ElementPtr> elemConv(entries, jsonKey);
     using ContainerConv = ContainerConverter<Container, PolymorphicConverter<ElementPtr>>;
     static const ContainerConv conv(elemConv);
-    if constexpr (Required) {
-        using Behavior = RequiredFieldOmitBehavior<Container>;
-        return JsonField<MemberPtrType, ContainerConv, Behavior>(
-            memberPtr, keyName, std::cref(conv), Behavior{});
-    }
-    else {
-        using Behavior = DefaultFieldOmitBehavior<Container>;
-        return JsonField<MemberPtrType, ContainerConv, Behavior>(
-            memberPtr, keyName, std::cref(conv), Behavior{});
-    }
+    using Behavior = RequiredFieldOmitBehavior<Container>;
+    return JsonField<MemberPtrType, ContainerConv, Behavior>(
+        memberPtr, keyName, std::cref(conv), Behavior{});
 }
 
 

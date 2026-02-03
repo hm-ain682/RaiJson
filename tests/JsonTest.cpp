@@ -994,7 +994,8 @@ TEST(JsonElementConverterTest, VariantElementConverterDerivedCustomizesString)
             static const MyElemConv elemConv{};
             static const auto conv = makeVariantConverter<Var>(elemConv);
             static const auto fields = makeJsonFieldSet<Holder>(
-                JsonField(&Holder::v, "v", std::cref(conv))
+                JsonField(&Holder::v, "v", std::cref(conv),
+                    NoDefaultFieldOmitBehavior<Var>{})
             );
             return fields;
         }
