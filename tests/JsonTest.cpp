@@ -907,8 +907,7 @@ struct RWElement {
     }
 };
 
-TEST(JsonElementConverterTest, ContainerUsesElementConverter)
-{
+TEST(JsonElementConverterTest, ContainerUsesElementConverter) {
     struct Holder {
         std::vector<RWElement> v;
         const IJsonFieldSet& jsonFields() const {
@@ -934,8 +933,7 @@ TEST(JsonElementConverterTest, ContainerUsesElementConverter)
     testJsonRoundTrip(original, "{v:[{x:11}]}");
 }
 
-TEST(JsonElementConverterTest, UniquePtrUsesElementConverter)
-{
+TEST(JsonElementConverterTest, UniquePtrUsesElementConverter) {
     struct Holder {
         std::unique_ptr<RWElement> item;
         const IJsonFieldSet& jsonFields() const {
@@ -963,13 +961,13 @@ TEST(JsonElementConverterTest, UniquePtrUsesElementConverter)
     testJsonRoundTrip(original, "{item:{x:21}}" );
 }
 
-TEST(JsonElementConverterTest, VariantUsesElementConverter)
-{
+TEST(JsonElementConverterTest, VariantUsesElementConverter) {
     struct Holder {
         std::variant<int, RWElement> v;
         const IJsonFieldSet& jsonFields() const {
+            static const auto converter = getVariantConverter<decltype(v)>();
             static const auto fields = makeJsonFieldSet<Holder>(
-                makeJsonVariantField(&Holder::v, "v")
+                getRequiredField(&Holder::v, "v", converter)
             );
             return fields;
         }
@@ -986,8 +984,7 @@ TEST(JsonElementConverterTest, VariantUsesElementConverter)
     testJsonRoundTrip(original, "{v:{x:42}}" );
 }
 
-TEST(JsonElementConverterTest, VariantElementConverterDerivedCustomizesString)
-{
+TEST(JsonElementConverterTest, VariantElementConverterDerivedCustomizesString) {
     using Var = std::variant<std::string, RWElement>;
 
     struct MyElemConv : VariantElementConverter<Var> {
@@ -1015,7 +1012,7 @@ TEST(JsonElementConverterTest, VariantElementConverterDerivedCustomizesString)
         Var v;
         const IJsonFieldSet& jsonFields() const {
             static const MyElemConv elemConv{};
-            static const auto conv = makeVariantConverter<Var>(elemConv);
+            static const auto conv = getVariantConverter<Var>(elemConv);
             static const auto fields = makeJsonFieldSet<Holder>(
                 JsonField(&Holder::v, "v", std::cref(conv),
                     NoDefaultFieldOmitBehavior<Var>{})
@@ -1041,8 +1038,7 @@ TEST(JsonElementConverterTest, VariantElementConverterDerivedCustomizesString)
     testJsonRoundTrip(o, "{v:{x:5}}" );
 }
 
-TEST(JsonElementConverterTest, NestedContainerUsesElementConverter)
-{
+TEST(JsonElementConverterTest, NestedContainerUsesElementConverter) {
     struct Holder {
         std::vector<std::vector<RWElement>> v;
         const IJsonFieldSet& jsonFields() const {
@@ -1070,8 +1066,7 @@ TEST(JsonElementConverterTest, NestedContainerUsesElementConverter)
     testJsonRoundTrip(original, "{v:[[{x:1},{x:2}]]}" );
 }
 
-TEST(JsonElementConverterExplicitTest, ContainerOfEnumWithExplicitContainerConverter)
-{
+TEST(JsonElementConverterExplicitTest, ContainerOfEnumWithExplicitContainerConverter) {
     enum class Color { Red, Blue };
     constexpr EnumEntry<Color> entries[] = {{Color::Red, "Red"}, {Color::Blue, "Blue"}};
     static const auto enumConverter = getEnumConverter(entries);
@@ -1099,8 +1094,7 @@ TEST(JsonElementConverterExplicitTest, ContainerOfEnumWithExplicitContainerConve
     testJsonRoundTrip(original, "{v:[\"Red\",\"Blue\"]}");
 }
 
-TEST(JsonElementConverterExplicitTest, ContainerWithExplicitElementConverter)
-{
+TEST(JsonElementConverterExplicitTest, ContainerWithExplicitElementConverter) {
     struct Holder {
         std::vector<RWElement> v;
         const IJsonFieldSet& jsonFields() const {

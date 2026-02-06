@@ -655,10 +655,13 @@ constexpr auto getUniquePtrConverter(const ElementConverter& elementConverter) {
 
 // ******************************************************************************** variant用変換方法
 
+/// @brief std::variant の要素ごとの変換方法。独自型を扱う場合はこれを継承してカスタマイズする。
+/// @tparam Variant std::variant 型
 export template <typename Variant>
 struct VariantElementConverter {
     static_assert(IsStdVariant<Variant>,
         "VariantElementConverter requires Variant to be a std::variant");
+
     template<typename T>
     void write(JsonWriter& writer, const T& value) const {
         static const auto& conv = getConverter<std::remove_cvref_t<T>>();
@@ -755,7 +758,9 @@ public:
     }
 };
 
-/// @brief `std::variant` を現在のトークンに基づいて読み書きするコンバータ。
+/// @brief `std::variant` の変換方法。
+///        要素ごとの変換方法はVariantElementConverterで指定する。
+///        ※利用者側でこのクラス内を直接操作することはない。
 /// @tparam T 対象の variant 型
 export template <typename Variant, typename ElementConverter>
 struct VariantConverter {
@@ -765,6 +770,8 @@ struct VariantConverter {
     static_assert(std::is_base_of_v<VariantElementConverter<Variant>, ElementConverterT>,
         "ElementConverter must be VariantElementConverter<Variant> or derived from it");
 
+    /// @brief 要素の変換方法を指定して構築する。
+    /// @param elementConverter 要素の変換方法。VariantElementConverter かその派生型。
     VariantConverter(ElementConverter elementConverter)
         : elementConverter_(std::move(elementConverter)) {}
 
@@ -813,37 +820,21 @@ private:
 
 /// @brief Variant 用の VariantConverter を構築するヘルパー（既定の ElementConverter を使用）。
 export template <typename Variant>
-constexpr auto makeVariantConverter() {
+constexpr auto getVariantConverter() {
     static_assert(IsStdVariant<Variant>,
-        "makeVariantConverter requires Variant to be a std::variant");
+        "getVariantConverter requires Variant to be a std::variant");
     using ElemConv = VariantElementConverter<Variant>;
     return VariantConverter<Variant, ElemConv>(ElemConv{});
 }
 
 /// @brief Variant 用の VariantConverter を構築するヘルパー（明示的な ElementConverter を使用）。
 export template <typename Variant, typename ElemConv>
-constexpr auto makeVariantConverter(ElemConv elemConv) {
+constexpr auto getVariantConverter(ElemConv elemConv) {
     static_assert(IsStdVariant<Variant>,
-        "makeVariantConverter requires Variant to be a std::variant");
+        "getVariantConverter requires Variant to be a std::variant");
     static_assert(std::is_base_of_v<VariantElementConverter<Variant>, std::remove_cvref_t<ElemConv>>,
         "ElemConv must be derived from VariantElementConverter<Variant>");
     return VariantConverter<Variant, std::remove_cvref_t<ElemConv>>(std::move(elemConv));
-}
-
-/// @brief `std::variant` 型のメンバ用に `JsonField` を作成するヘルパー（既定の `VariantConverter` を使用）。
-export template <typename MemberPtr>
-constexpr auto makeJsonVariantField(
-    MemberPtr memberPtr, const char* keyName) {
-    static_assert(std::is_member_object_pointer_v<MemberPtr>,
-        "makeJsonVariantField requires MemberPtr to be a member object pointer");
-    static_assert(IsStdVariant<MemberPointerValueType<MemberPtr>>,
-        "makeJsonVariantField requires member to be a std::variant");
-    using Var = MemberPointerValueType<MemberPtr>;
-    static const auto converter = makeVariantConverter<Var>();
-    using ConverterBody = std::remove_cvref_t<decltype(converter)>;
-    using Behavior = RequiredFieldOmitBehavior<Var>;
-    return JsonField<MemberPtr, ConverterBody, Behavior>(
-        memberPtr, keyName, std::cref(converter), Behavior{});
 }
 
 
