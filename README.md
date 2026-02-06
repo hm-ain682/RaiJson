@@ -84,7 +84,7 @@ int main() {
 ```
 
 ## Enum fields example (JsonEnumField) 🔁
-Serialize enum members as strings by defining an enum map and using `makeJsonEnumField`.
+Serialize enum members as strings by defining an enum map and using `getRequiredField` with an enum converter.
 
 ```cpp
 import rai.json.json_field;
@@ -97,13 +97,13 @@ struct ColorHolder {
     Color color = Color::Red;
 
     const rai::json::IJsonFieldSet& jsonFields() const {
-        static const auto colorMap = rai::json::makeJsonEnumMap({
+        static const auto colorConverter = rai::json::getEnumConverter<Color>({
             { Color::Red,   "red" },
             { Color::Green, "green" },
             { Color::Blue,  "blue" }
         });
         static const auto fields = rai::json::makeJsonFieldSet<ColorHolder>(
-            rai::json::makeJsonEnumField(&ColorHolder::color, "color", colorMap)
+            rai::json::getRequiredField(&ColorHolder::color, "color", colorConverter)
         );
         return fields;
     }

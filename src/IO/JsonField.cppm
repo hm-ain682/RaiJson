@@ -515,36 +515,6 @@ constexpr auto getEnumConverter(std::span<const EnumEntry<Enum>, N> entries) {
     return EnumConverter<EnumTextMap<Enum, N>>(map);
 }
 
-/// @brief 列挙型メンバに対する `JsonField` を作成する（`EnumTextMap` を渡す版）。
-export template <typename MemberPtr, typename MapType>
-constexpr auto makeJsonEnumField(MemberPtr memberPtr, const char* keyName,
-    const MapType& map) {
-    static_assert(IsEnumTextMap<MapType>,
-        "makeJsonEnumField requires MapType to satisfy IsEnumTextMap");
-    static_assert(std::same_as<typename MapType::Enum, MemberPointerValueType<MemberPtr>>,
-        "MapType::Enum must match the member's value type");
-    static const EnumConverter<MapType> conv(map);
-    using Value = MemberPointerValueType<MemberPtr>;
-    using Behavior = RequiredFieldOmitBehavior<Value>;
-    return JsonField<MemberPtr, EnumConverter<MapType>, Behavior>(
-        memberPtr, keyName, std::cref(conv), Behavior{});
-}
-
-/// @brief 外部で管理される `EnumConverter` を用いて `JsonField` を作成する（コンバータはフィールドより長く存続する必要があります）。
-export template <typename MemberPtr, typename MapType>
-constexpr auto makeJsonEnumField(MemberPtr memberPtr, const char* keyName,
-    const EnumConverter<MapType>& conv) {
-    static_assert(IsEnumTextMap<MapType>,
-        "makeJsonEnumField requires MapType to satisfy IsEnumTextMap");
-    static_assert(std::same_as<typename MapType::Enum, MemberPointerValueType<MemberPtr>>,
-        "MapType::Enum must match the member's value type");
-    using Value = MemberPointerValueType<MemberPtr>;
-    using Behavior = RequiredFieldOmitBehavior<Value>;
-    return JsonField<MemberPtr, EnumConverter<MapType>, Behavior>(
-        memberPtr, keyName, std::cref(conv), Behavior{});
-}
-
-
 // ******************************************************************************** コンテナ用変換方法
 
 /// @brief コンテナ用コンバータ（要素コンバータ参照を持つ）。
