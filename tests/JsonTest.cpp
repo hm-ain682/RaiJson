@@ -998,13 +998,13 @@ TEST(JsonElementConverterTest, VariantElementConverterDerivedCustomizesString) {
             tmp += value;
             writer.writeObject(tmp);
         }
-        void readString(JsonParser& parser, Var& value) const {
+        Var readString(JsonParser& parser) const {
             std::string s;
             parser.readTo(s);
             if (s.rfind("PFX:", 0) != 0) {
                 throw std::runtime_error("Expected prefixed string");
             }
-            value = s.substr(4);
+            return Var{ s.substr(4) };
         }
     };
 

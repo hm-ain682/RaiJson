@@ -280,6 +280,15 @@ struct ReadWriteJsonConverter {
     }
 };
 
+/// @brief 標準でサポートする型を判定する。
+/// @tparam T 判定対象の型
+export template <typename T>
+concept IsDefaultConverterSupported
+    = IsFundamentalValue<T>
+    || std::same_as<T, std::string>
+    || HasJsonFields<T>
+    || (HasReadJson<T> && HasWriteJson<T>);
+
 /// @brief 型 `T` に応じた既定のコンバータを返すユーティリティ。
 /// @note 基本型、`HasJsonFields`、`HasReadJson`/`HasWriteJson` を持つ型を自動的に扱い、その他の複雑な型は明確な static_assert で除外します。
 export template <typename T>
@@ -653,191 +662,6 @@ constexpr auto getUniquePtrConverter(const ElementConverter& elementConverter) {
 }
 
 
-// ******************************************************************************** variant用変換方法
-
-/// @brief std::variant の要素ごとの変換方法。独自型を扱う場合はこれを継承してカスタマイズする。
-/// @tparam Variant std::variant 型
-export template <typename Variant>
-struct VariantElementConverter {
-    static_assert(IsStdVariant<Variant>,
-        "VariantElementConverter requires Variant to be a std::variant");
-
-    template<typename T>
-    void write(JsonWriter& writer, const T& value) const {
-        static const auto& conv = getConverter<std::remove_cvref_t<T>>();
-        conv.write(writer, value);
-    }
-
-    void readNull(JsonParser& parser, Variant& value) const {
-        if constexpr (canAssignNullptr()) {
-            value = nullptr;
-        }
-        else {
-            throw std::runtime_error("Null is not supported in variant");
-        }
-    }
-private:
-    static constexpr bool canAssignNullptr() noexcept {
-        using Null = std::nullptr_t;
-        return []<size_t... I>(std::index_sequence<I...>) {
-            return (std::is_assignable_v<
-                typename std::variant_alternative_t<I, Variant>&,
-                Null
-            > || ...);
-        }(std::make_index_sequence<std::variant_size_v<Variant>>{});
-    }
-public:
-    void readBool(JsonParser& parser, Variant& value) const {
-        if constexpr (canAssign<bool>()) {
-            parser.readTo(std::get<bool>(value));
-        }
-        else {
-            throw std::runtime_error("Bool is not supported in variant");
-        }
-    }
-
-    void readInteger(JsonParser& parser, Variant& value) const {
-        if constexpr (canAssign<int>()) {
-            parser.readTo(std::get<int>(value));
-        }
-        else {
-            throw std::runtime_error("Integer is not supported in variant");
-        }
-    }
-
-    void readNumber(JsonParser& parser, Variant& value) const {
-        if constexpr (canAssign<double>()) {
-            parser.readTo(std::get<double>(value));
-        }
-        else {
-            throw std::runtime_error("Number is not supported in variant");
-        }
-    }
-
-    void readString(JsonParser& parser, Variant& value) const {
-        if constexpr (canAssign<std::string>()) {
-            parser.readTo(std::get<std::string>(value));
-        }
-        else {
-            throw std::runtime_error("String is not supported in variant");
-        }
-    }
-private:
-    template<class T>
-    static constexpr bool canAssign() noexcept {
-        using U = std::remove_cvref_t<T>;
-        return []<size_t... I>(std::index_sequence<I...>) {
-            return (std::is_same_v<U, std::remove_cvref_t<
-                typename std::variant_alternative_t<I, Variant>>>
-                || ...);
-        }(std::make_index_sequence<std::variant_size_v<Variant>>{});
-    }
-
-public:
-    void readStartArray(JsonParser& parser, Variant& value) const {
-        throw std::runtime_error("Array is not supported in variant");
-    }
-
-    void readStartObject(JsonParser& parser, Variant& value) const {
-        bool found = false;
-        [&]<std::size_t... I>(std::index_sequence<I...>) {
-            // Evaluate alternatives in order; stop at the first that matches
-            ((void)(!found && ([&]() {
-                using Alt = std::remove_cvref_t<typename std::variant_alternative_t<I, Variant>>;
-                if constexpr (HasJsonFields<Alt> || (HasReadJson<Alt> && HasWriteJson<Alt>)) {
-                    value = getConverter<Alt>().read(parser);
-                    found = true;
-                }
-                return 0;
-            }())), ...);
-        }(std::make_index_sequence<std::variant_size_v<Variant>>{});
-
-        if (!found) {
-            throw std::runtime_error("Object is not supported in variant");
-        }
-    }
-};
-
-/// @brief `std::variant` の変換方法。
-///        要素ごとの変換方法はVariantElementConverterで指定する。
-///        ※利用者側でこのクラス内を直接操作することはない。
-/// @tparam T 対象の variant 型
-export template <typename Variant, typename ElementConverter>
-struct VariantConverter {
-    static_assert(IsStdVariant<Variant>, "VariantConverter requires Variant to be a std::variant");
-    using Value = Variant; 
-    using ElementConverterT = std::remove_cvref_t<ElementConverter>;
-    static_assert(std::is_base_of_v<VariantElementConverter<Variant>, ElementConverterT>,
-        "ElementConverter must be VariantElementConverter<Variant> or derived from it");
-
-    /// @brief 要素の変換方法を指定して構築する。
-    /// @param elementConverter 要素の変換方法。VariantElementConverter かその派生型。
-    VariantConverter(ElementConverter elementConverter)
-        : elementConverter_(std::move(elementConverter)) {}
-
-    /// @brief Variant 値を JSON に書き出す。
-    void write(JsonWriter& writer, const Variant& v) const {
-        std::visit([&](const auto& inner) {
-            elementConverter_.write(writer, inner);
-        }, v);
-    }
-
-    /// @brief JSON のトークンに応じて variant を構築して返す。
-    Variant read(JsonParser& parser) const {
-        auto tokenType = parser.nextTokenType();
-        Variant out{};
-        switch (tokenType) {
-        case JsonTokenType::Null:
-            elementConverter_.readNull(parser, out);
-            break;
-        case JsonTokenType::Bool:
-            elementConverter_.readBool(parser, out);
-            break;
-        case JsonTokenType::Integer:
-            elementConverter_.readInteger(parser, out);
-            break;
-        case JsonTokenType::Number:
-            elementConverter_.readNumber(parser, out);
-            break;
-        case JsonTokenType::String:
-            elementConverter_.readString(parser, out);
-            break;
-        case JsonTokenType::StartObject:
-            elementConverter_.readStartObject(parser, out);
-            break;
-        case JsonTokenType::StartArray:
-            elementConverter_.readStartArray(parser, out);
-            break;
-        default:
-            break;
-        }
-        return out;
-    }
-
-private:
-    ElementConverter elementConverter_{};
-};
-
-/// @brief Variant 用の VariantConverter を構築するヘルパー（既定の ElementConverter を使用）。
-export template <typename Variant>
-constexpr auto getVariantConverter() {
-    static_assert(IsStdVariant<Variant>,
-        "getVariantConverter requires Variant to be a std::variant");
-    using ElemConv = VariantElementConverter<Variant>;
-    return VariantConverter<Variant, ElemConv>(ElemConv{});
-}
-
-/// @brief Variant 用の VariantConverter を構築するヘルパー（明示的な ElementConverter を使用）。
-export template <typename Variant, typename ElemConv>
-constexpr auto getVariantConverter(ElemConv elemConv) {
-    static_assert(IsStdVariant<Variant>,
-        "getVariantConverter requires Variant to be a std::variant");
-    static_assert(std::is_base_of_v<VariantElementConverter<Variant>, std::remove_cvref_t<ElemConv>>,
-        "ElemConv must be derived from VariantElementConverter<Variant>");
-    return VariantConverter<Variant, std::remove_cvref_t<ElemConv>>(std::move(elemConv));
-}
-
-
 // ******************************************************************************** トークン種別毎の分岐用
 
 /// @brief トークン種別ごとの読み取り／書き出しを提供する基底的なコンバータ
@@ -898,18 +722,12 @@ private:
         }
     }
 
-    // 書き出し（オーバーライド可能）
     void write(JsonWriter& writer, const Value& value) const {
-        // Default: try direct writer or getConverter if available
-        if constexpr (requires { writer.writeObject(value); }) {
-            writer.writeObject(value);
-        }
-        else if constexpr (HasJsonFields<Value> || (HasReadJson<Value> && HasWriteJson<Value>)) {
+        if constexpr (IsDefaultConverterSupported<Value>) {
             getConverter<Value>().write(writer, value);
         }
         else {
-            static_assert(std::is_same_v<Value, void>,
-                "TokenConverter::write: unsupported Value type");
+            static_assert(false, "TokenConverter::write: unsupported Value type");
         }
     }
 };
@@ -948,6 +766,166 @@ struct TokenDispatchConverter {
 private:
     TokenConvT tokenConverter_{};
 };
+
+
+// ******************************************************************************** variant用変換方法
+
+/// @brief std::variant の要素ごとの変換方法。独自型を扱う場合はこれを継承してカスタマイズする。
+/// @tparam Variant std::variant 型
+export template <typename Variant>
+struct VariantElementConverter : TokenConverter<Variant> {
+    static_assert(IsStdVariant<Variant>,
+        "VariantElementConverter requires Variant to be a std::variant");
+
+    /// @brief Null トークンを読み取り、variant を返す。
+    /// @param parser 読み取り元の JsonParser
+    /// @return 読み取った値
+    Variant readNull(JsonParser& parser) const {
+        (void)parser;
+        if constexpr (canAssignNullptr()) {
+            return Variant{ nullptr };
+        }
+        throw std::runtime_error("Null is not supported in variant");
+    }
+
+    /// @brief Bool トークンを読み取り、variant を返す。
+    /// @param parser 読み取り元の JsonParser
+    /// @return 読み取った値
+    Variant readBool(JsonParser& parser) const {
+        if constexpr (canAssign<bool>()) {
+            bool value{};
+            parser.readTo(value);
+            return Variant{ value };
+        }
+        throw std::runtime_error("Bool is not supported in variant");
+    }
+
+    /// @brief Integer トークンを読み取り、variant を返す。
+    /// @param parser 読み取り元の JsonParser
+    /// @return 読み取った値
+    Variant readInteger(JsonParser& parser) const {
+        if constexpr (canAssign<int>()) {
+            int value{};
+            parser.readTo(value);
+            return Variant{ value };
+        }
+        throw std::runtime_error("Integer is not supported in variant");
+    }
+
+    /// @brief Number トークンを読み取り、variant を返す。
+    /// @param parser 読み取り元の JsonParser
+    /// @return 読み取った値
+    Variant readNumber(JsonParser& parser) const {
+        if constexpr (canAssign<double>()) {
+            double value{};
+            parser.readTo(value);
+            return Variant{ value };
+        }
+        throw std::runtime_error("Number is not supported in variant");
+    }
+
+    /// @brief String トークンを読み取り、variant を返す。
+    /// @param parser 読み取り元の JsonParser
+    /// @return 読み取った値
+    Variant readString(JsonParser& parser) const {
+        if constexpr (canAssign<std::string>()) {
+            std::string value{};
+            parser.readTo(value);
+            return Variant{ std::move(value) };
+        }
+        throw std::runtime_error("String is not supported in variant");
+    }
+
+    /// @brief StartArray トークンを読み取り、variant を返す。
+    /// @param parser 読み取り元の JsonParser
+    /// @return 読み取った値
+    Variant readStartArray(JsonParser& parser) const {
+        (void)parser;
+        throw std::runtime_error("Array is not supported in variant");
+    }
+
+    /// @brief StartObject トークンを読み取り、variant を返す。
+    /// @param parser 読み取り元の JsonParser
+    /// @return 読み取った値
+    Variant readStartObject(JsonParser& parser) const {
+        bool found = false;
+        Variant out{};
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            // Evaluate alternatives in order; stop at the first that matches
+            ((void)(!found && ([&]() {
+                using Alt = std::remove_cvref_t<typename std::variant_alternative_t<I, Variant>>;
+                if constexpr (HasJsonFields<Alt> || (HasReadJson<Alt> && HasWriteJson<Alt>)) {
+                    out = getConverter<Alt>().read(parser);
+                    found = true;
+                }
+                return 0;
+            }())), ...);
+        }(std::make_index_sequence<std::variant_size_v<Variant>>{});
+
+        if (!found) {
+            throw std::runtime_error("Object is not supported in variant");
+        }
+        return out;
+    }
+
+    /// @brief Variant 値を JSON に書き出す。
+    /// @param writer 書き込み先の JsonWriter
+    /// @param value 書き込む値
+    void write(JsonWriter& writer, const Variant& value) const {
+        std::visit([&](const auto& inner) {
+            this->write(writer, inner);
+        }, value);
+    }
+
+    template<typename T>
+    void write(JsonWriter& writer, const T& value) const {
+        static const auto& conv = getConverter<std::remove_cvref_t<T>>();
+        conv.write(writer, value);
+    }
+private:
+    static constexpr bool canAssignNullptr() noexcept {
+        using Null = std::nullptr_t;
+        return []<size_t... I>(std::index_sequence<I...>) {
+            return (std::is_assignable_v<
+                typename std::variant_alternative_t<I, Variant>&,
+                Null
+            > || ...);
+        }(std::make_index_sequence<std::variant_size_v<Variant>>{});
+    }
+private:
+    template<class T>
+    static constexpr bool canAssign() noexcept {
+        using U = std::remove_cvref_t<T>;
+        return []<size_t... I>(std::index_sequence<I...>) {
+            return (std::is_same_v<U, std::remove_cvref_t<
+                typename std::variant_alternative_t<I, Variant>>>
+                || ...);
+        }(std::make_index_sequence<std::variant_size_v<Variant>>{});
+    }
+};
+
+/// @brief Variant 用の TokenDispatchConverter を構築するヘルパー（既定の要素変換器）。
+export template <typename Variant>
+constexpr auto getVariantConverter() {
+    static_assert(IsStdVariant<Variant>,
+        "getVariantConverter requires Variant to be a std::variant");
+    using ElementConverter = VariantElementConverter<Variant>;
+    return TokenDispatchConverter<Variant, ElementConverter>(ElementConverter{});
+}
+
+/// @brief Variant 用の TokenDispatchConverter を構築するヘルパー（要素変換器指定）。
+export template <typename Variant, typename ElementConverterType>
+constexpr auto getVariantConverter(ElementConverterType elementConverter) {
+    static_assert(IsStdVariant<Variant>,
+        "getVariantConverter requires Variant to be a std::variant");
+    static_assert(std::is_base_of_v<VariantElementConverter<Variant>,
+        std::remove_cvref_t<ElementConverterType>>,
+        "ElementConverterType must be derived from VariantElementConverter<Variant>");
+    using ElementConverter = std::remove_cvref_t<ElementConverterType>;
+    return TokenDispatchConverter<Variant, ElementConverter>(
+        ElementConverter(std::move(elementConverter)));
+}
+
 
 /// @brief 汎用の `TokenDispatchConverter` を受け取って `JsonField` を作成するヘルパー。
 export template <typename MemberPtr, typename Converter>
