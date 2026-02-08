@@ -98,7 +98,7 @@ Ptr readPolymorphicInstance(
     if constexpr (HasJsonFields<BaseType>) {
         auto& fields = instance->jsonFields();
         BaseType* raw = std::to_address(instance);
-        fields.readObject(parser, raw);
+        fields.readFields(parser, raw);
     }
     else {
         // jsonFieldsを持たない型の場合、全フィールドをスキップ
@@ -179,7 +179,7 @@ struct PolymorphicConverter {
         writer.key(jsonKey_);
         writer.writeObject(typeName);
         auto& fields = ptr->jsonFields();
-        fields.writeFieldsOnly(writer, std::to_address(ptr));
+        fields.writeFields(writer, std::to_address(ptr));
         writer.endObject();
     }
 

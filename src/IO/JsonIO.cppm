@@ -38,7 +38,7 @@ void writeJsonToBuffer(const T& obj, std::ostream& os) {
     JsonWriter writer(os);
     auto& fields = obj.jsonFields();
     writer.startObject();
-    fields.writeFieldsOnly(writer, &obj);
+    fields.writeFields(writer, &obj);
     writer.endObject();
 }
 
@@ -82,7 +82,7 @@ void readJsonObject(JsonParser& parser, T& obj) {
     auto& fields = obj.jsonFields();
     // Delegate full object parsing (including defaults and required checks)
     parser.startObject();
-    fields.readObject(parser, &obj);
+    fields.readFields(parser, &obj);
     parser.endObject();
 }
 

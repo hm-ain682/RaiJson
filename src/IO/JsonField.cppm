@@ -43,74 +43,72 @@ namespace rai::json {
 template <typename T>
 struct MemberPointerTraits;
 
-template <typename Owner, typename Value>
-struct MemberPointerTraits<Value Owner::*> {
-    using OwnerType = Owner;
-    using ValueType = Value;
+template <typename OwnerType, typename ValueType>
+struct MemberPointerTraits<ValueType OwnerType::*> {
+    using Owner = OwnerType;
+    using Value = ValueType;
 };
 
 /// @brief メンバーポインタ型から対応する値型を取り出す型エイリアス。
 export template <typename MemberPtr>
-using MemberPointerValueType = typename MemberPointerTraits<MemberPtr>::ValueType;
+using MemberPointerValueType = typename MemberPointerTraits<MemberPtr>::Value;
 
 /// @brief SingleValueFieldOmitBehavior を利用できるか判定するconcept。
-/// @tparam ValueType 対象型
-template <typename ValueType>
-concept IsSingleValueBehaviorAllowed = std::is_copy_constructible_v<ValueType>
-    && std::is_copy_assignable_v<ValueType>
-    && std::equality_comparable<ValueType>
-    && (!IsContainer<ValueType>
-        || (std::is_copy_constructible_v<std::remove_cvref_t<std::ranges::range_value_t<ValueType>>>
-            && std::is_copy_assignable_v<std::remove_cvref_t<std::ranges::range_value_t<ValueType>>>))
-    && (!IsUniquePtr<ValueType>);
+/// @tparam Value 対象型
+template <typename Value>
+concept IsSingleValueBehaviorAllowed = std::is_copy_constructible_v<Value>
+    && std::is_copy_assignable_v<Value>
+    && std::equality_comparable<Value>
+    && (!IsContainer<Value>
+        || (std::is_copy_constructible_v<std::remove_cvref_t<std::ranges::range_value_t<Value>>>
+            && std::is_copy_assignable_v<std::remove_cvref_t<std::ranges::range_value_t<Value>>>))
+    && (!IsUniquePtr<Value>);
 
 /// @brief JsonFieldの省略時挙動を満たす型の concept。
 /// @tparam Behavior 挙動型
 /// @tparam Value 値型
 export template <typename Behavior, typename Value>
-concept IsJsonFieldOmittedBehavior = requires(
-    const Behavior& behavior,
-    const Value& value,
-    Value& outValue,
-    std::string_view key) {
+concept IsJsonFieldOmittedBehavior = requires(const Behavior& behavior, const Value& value,
+    Value& outValue, std::string_view key) {
     { behavior.shouldSkipWrite(value) } -> std::same_as<bool>;
     { behavior.applyMissing(outValue, key) } -> std::same_as<void>;
 };
 
 /// @brief 読み込み時省略では既定値を設定し、書き出し時既定値と一致するならスキップする省略時挙動。
-/// @tparam ValueType 値型
-export template <typename ValueType>
+/// @tparam Value 値型
+export template <typename Value>
 struct SingleValueFieldOmitBehavior {
-    static_assert(IsSingleValueBehaviorAllowed<ValueType>,
-        "SingleValueFieldOmitBehavior requires copyable ValueType");
-    static_assert(std::equality_comparable<ValueType>,
-        "SingleValueFieldOmitBehavior requires equality comparable ValueType");
-    ValueType defaultValue{};  ///< 省略判定と欠落時代入に使う値
+    static_assert(IsSingleValueBehaviorAllowed<Value>,
+        "SingleValueFieldOmitBehavior requires copyable Value");
+    static_assert(std::equality_comparable<Value>,
+        "SingleValueFieldOmitBehavior requires equality comparable Value");
 
     /// @brief 値が省略条件に一致するかを返す。
     /// @param value チェックする値
     /// @return 省略すべきなら true
-    bool shouldSkipWrite(const ValueType& value) const {
+    bool shouldSkipWrite(const Value& value) const {
         return value == defaultValue;
     }
 
     /// @brief 欠落時の挙動を適用する。
     /// @param outValue 欠落時に代入する対象
     /// @param key 対象キー名
-    void applyMissing(ValueType& outValue, std::string_view key) const {
+    void applyMissing(Value& outValue, std::string_view key) const {
         (void)key;
         outValue = defaultValue;
     }
+
+    Value defaultValue{};  ///< 省略判定と欠落時代入に使う値
 };
 
 /// @brief 省略時挙動（既定値も省略条件も持たない）。
-/// @tparam ValueType 値型
-export template <typename ValueType>
+/// @tparam Value 値型
+export template <typename Value>
 struct NoDefaultFieldOmitBehavior {
     /// @brief 値が省略条件に一致するかを返す。
     /// @param value チェックする値
     /// @return 省略すべきなら true
-    bool shouldSkipWrite(const ValueType& value) const {
+    bool shouldSkipWrite(const Value& value) const {
         (void)value;
         return false;
     }
@@ -118,20 +116,20 @@ struct NoDefaultFieldOmitBehavior {
     /// @brief 欠落時の挙動を適用する。
     /// @param outValue 欠落時に代入する対象
     /// @param key 対象キー名
-    void applyMissing(ValueType& outValue, std::string_view key) const {
+    void applyMissing(Value& outValue, std::string_view key) const {
         (void)outValue;
         (void)key;
     }
 };
 
 /// @brief 読み込み時省略では例外を送出し、常時書き出しす省略時挙動。
-/// @tparam ValueType 値型
-export template <typename ValueType>
+/// @tparam Value 値型
+export template <typename Value>
 struct RequiredFieldOmitBehavior {
     /// @brief 値が省略条件に一致するかを返す。
     /// @param value チェックする値
     /// @return 省略すべきなら true
-    bool shouldSkipWrite(const ValueType& value) const {
+    bool shouldSkipWrite(const Value& value) const {
         (void)value;
         return false;
     }
@@ -139,7 +137,7 @@ struct RequiredFieldOmitBehavior {
     /// @brief 欠落時の挙動を適用する。
     /// @param outValue 欠落時に代入する対象
     /// @param key 対象キー名
-    void applyMissing(ValueType& outValue, std::string_view key) const {
+    void applyMissing(Value& outValue, std::string_view key) const {
         (void)outValue;
         throw std::runtime_error(
             std::string("JsonParser: missing required key '") +
@@ -155,11 +153,11 @@ struct JsonField {
     static_assert(std::is_member_object_pointer_v<MemberPtr>,
         "JsonField requires MemberPtr to be a member object pointer");
     using Traits = MemberPointerTraits<MemberPtr>; 
-    using OwnerType = typename Traits::OwnerType;
-    using ValueType = typename Traits::ValueType;
+    using Owner = typename Traits::Owner;
+    using Value = typename Traits::Value;
     static_assert(IsJsonConverter<Converter, MemberPointerValueType<MemberPtr>>,
         "Converter must satisfy IsJsonConverter for the member value type");
-    static_assert(IsJsonFieldOmittedBehavior<OmittedBehavior, ValueType>,
+    static_assert(IsJsonFieldOmittedBehavior<OmittedBehavior, Value>,
         "OmittedBehavior must satisfy IsJsonFieldOmittedBehavior for the member value type");
 
     /// @brief コンストラクタ（省略時挙動を明示的に指定する版）。
@@ -172,17 +170,18 @@ struct JsonField {
         : member(memberPtr), converter_(conv), key(keyName),
           omittedBehavior_(std::move(behavior)) {}
 
-    /// @brief JSON から値を読み取る。
+    /// @brief JSON から値を読み取り、所有者のメンバに設定する。
     /// @param parser 読み取り元の JsonParser
-    /// @return 変換された値
-    ValueType read(JsonParser& parser) const {
-        return converter_.get().read(parser);
+    /// @param owner 代入先の所有者
+    void read(JsonParser& parser, Owner& owner) const {
+        owner.*member = converter_.get().read(parser);
     }
 
     /// @brief JSON項目（キーと値）を書き出す。
     /// @param writer 書き込み先の JsonWriter
-    /// @param value 書き込む値
-    void writeKeyValue(JsonWriter& writer, const ValueType& value) const {
+    /// @param owner 書き出し元の所有者
+    void write(JsonWriter& writer, const Owner& owner) const {
+        const auto& value = owner.*member;
         if (omittedBehavior_.shouldSkipWrite(value)) {
             return;
         }
@@ -191,9 +190,9 @@ struct JsonField {
     }
 
     /// @brief 欠落時の挙動を適用する。
-    /// @param outValue 欠落時に代入する対象
-    void applyMissing(ValueType& outValue) const {
-        omittedBehavior_.applyMissing(outValue, key);
+    /// @param owner 欠落時に代入する対象の所有者
+    void applyMissing(Owner& owner) const {
+        omittedBehavior_.applyMissing(owner.*member, key);
     }
 
     MemberPtr member{};                               ///< メンバポインタ

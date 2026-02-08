@@ -130,14 +130,14 @@ struct JsonFieldsConverter {
     void write(JsonWriter& writer, const T& obj) const {
         auto& fields = obj.jsonFields();
         writer.startObject();
-        fields.writeFieldsOnly(writer, static_cast<const void*>(&obj));
+        fields.writeFields(writer, static_cast<const void*>(&obj));
         writer.endObject();
     }
     T read(JsonParser& parser) const {
         T obj{};
         auto& fields = obj.jsonFields();
         parser.startObject();
-        fields.readObject(parser, &obj);
+        fields.readFields(parser, &obj);
         parser.endObject();
         return obj;
     }

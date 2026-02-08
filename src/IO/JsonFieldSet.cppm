@@ -41,13 +41,24 @@ public:
     /// @param writer 書き込み先のJsonWriter。
     /// @param obj 対象オブジェクトのvoidポインタ。
     /// @note ポリモーフィック型の書き出し時に使用する。
-    virtual void writeFieldsOnly(JsonWriter& writer, const void* obj) const = 0;
+    virtual void writeFields(JsonWriter& writer, const void* obj) const = 0;
 
-    /// @brief オブジェクト全体の読み込みを行う。
+    /// @brief オブジェクトのフィールドを読み込む。
     /// @param parser 読み取り元の JsonParser
     /// @param obj 対象オブジェクトの void* ポインタ
     /// @note startObject/endObject は呼び出し側で処理してください。
-    virtual void readObject(JsonParser& parser, void* obj) const = 0;
+    virtual void readFields(JsonParser& parser, void* obj) const = 0;
+};
+
+/// @brief JsonField互換のインターフェースを満たすか判定するconcept。
+/// @tparam Field 判定対象のフィールド型
+export template <typename Field>
+concept IsReadWriteField = requires(const Field& field, JsonParser& parser, JsonWriter& writer,
+    typename Field::Owner& owner, const typename Field::Owner& constOwner) {
+    { field.read(parser, owner) } -> std::same_as<void>;
+    { field.write(writer, constOwner) } -> std::same_as<void>;
+    { field.applyMissing(owner) } -> std::same_as<void>;
+    { field.key } -> std::convertible_to<const char*>;
 };
 
 // ******************************************************************************** フィールドセット
@@ -58,17 +69,14 @@ public:
 export template <typename Owner, typename... Fields>
 class JsonFieldSetBody : public IJsonFieldSet {
 private:
-    // static_assertをメンバー関数に移動して遅延評価させる
-    static constexpr void validateFields() {
-        static_assert((std::is_base_of_v<typename std::remove_cvref_t<Fields>::OwnerType, Owner> && ...),
-            "JsonFieldSetBody fields must be accessible from Owner type");
-    }
+    static_assert((IsReadWriteField<std::remove_cvref_t<Fields>> && ...),
+        "JsonFieldSetBody fields must satisfy JsonField-like interface");
+    static_assert((std::is_base_of_v<typename std::remove_cvref_t<Fields>::Owner, Owner> && ...),
+        "JsonFieldSetBody fields must be accessible from Owner type");
 
 public:
     constexpr explicit JsonFieldSetBody(Fields... fields)
         : fields_(std::move(fields)...) {
-        validateFields();
-
         // Build a small array of key/value descriptors from the stored fields_
         // so SortedHashArrayMap can be constructed from elements that have
         // .key and .value members (valueは探索用のダミーで未使用)。
@@ -83,39 +91,31 @@ public:
         fieldMap_ = collection::SortedHashArrayMap<std::string_view, bool, N_>(arr);
     }
 
-    static constexpr std::size_t fieldCount() {
-        return sizeof...(Fields);
-    }
-
     /// @brief フィールド数を返す。
     /// @return 保持しているフィールド数。
     constexpr std::size_t size() const {
         return N_;
     }
 
-    // ******************************************************************************** 書き出し
     /// @brief オブジェクトのフィールドのみを書き出す（startObject/endObjectなし）。
     /// @param writer 書き込み先のJsonWriter。
     /// @param obj 対象オブジェクトのvoidポインタ。
     /// @note ポリモーフィック型の書き出し時に使用する。
-    void writeFieldsOnly(JsonWriter& writer, const void* obj) const override {
+    void writeFields(JsonWriter& writer, const void* obj) const override {
         const Owner* owner = static_cast<const Owner*>(obj);
         forEachField([&](std::size_t, const auto& field) {
-            const auto& value = owner->*(field.member);
             // デフォルトの toJson に委譲（明示的な分岐不要）
-            field.writeKeyValue(writer, value);
+            field.write(writer, *owner);
         });
     }
 
-    // ******************************************************************************** 読み込み
-private:
-    /// @brief オブジェクトのフィールドをJSONから読み込む（startObject/endObject済み）。
+    /// @brief オブジェクトのフィールドをJSONから読み込む（startObject/endObjectなし）。
     /// @param parser 読み取り元のJsonParser互換オブジェクト。
     /// @param obj 対象オブジェクト。
     /// @note JsonFieldSetBody内でフィールド探索と読み込みを行う。
-    void readObjectFields(JsonParser& parser, Owner& obj) const {
-        constexpr std::size_t N = sizeof...(Fields);
-        std::bitset<N> seen{};
+    void readFields(JsonParser& parser, void* obj) const override {
+        auto& owner = *static_cast<Owner*>(obj);
+        std::bitset<N_> seen{};
         while (!parser.nextIsEndObject()) {
             std::string k = parser.nextKey();
             auto foundIndex = fieldMap_.findIndex(k);
@@ -132,27 +132,19 @@ private:
 
             // テンプレート展開により各フィールドの型に応じた処理が静的に解決される
             visitField(fieldIndex, [&](const auto& field) {
-                // デフォルトの read に委譲（明示的な分岐不要）
-                obj.*(field.member) = field.read(parser);
+                field.read(parser, owner);
             });
         }
 
         // 必須フィールドのチェックと既定値の反映
         forEachField([&](std::size_t index, const auto& field) {
-            if (seen[index]) {
-                return; // 読み込み済み。
+            if (!seen[index]) {
+                field.applyMissing(owner);
             }
-            field.applyMissing(obj.*(field.member));
         });
     }
 
     // ************************************************************************** JSONフィールド操作
-public:
-    /// @brief オブジェクト全体の読み込み（startObject/endObjectは呼び出し側が処理）。
-    void readObject(JsonParser& parser, void* obj) const override {
-        Owner* owner = static_cast<Owner*>(obj);
-        readObjectFields(parser, *owner);
-    }
 
 private:
     /// @brief 指定インデックスのフィールドにアクセスする。
@@ -192,9 +184,8 @@ private:
     // ******************************************************************************** フィールド
     static constexpr std::size_t N_ = sizeof...(Fields);
 
-    // Use std::string_view for keys so lookups using std::string_view work
-    // reliably without the SortedHashArrayMap needing string_view-specific code.
-    collection::SortedHashArrayMap<std::string_view, bool, N_> fieldMap_{}; ///< ハッシュ順に整列したフィールド情報。
+    ///! jsonキーに対応するフィールド検索用。
+    collection::SortedHashArrayMap<std::string_view, bool, N_> fieldMap_{};
     std::tuple<std::remove_cvref_t<Fields>...> fields_{}; ///< フィールド定義群。
 };
 
@@ -250,7 +241,7 @@ constexpr auto makeJsonFieldSet(Fields... fields) {
 export template <typename... Fields>
 constexpr auto makeJsonFieldSet(Fields... fields) {
     static_assert(sizeof...(Fields) > 0, "makeJsonFieldSet requires explicit Owner when no fields are specified");
-    using Owner = typename DeduceOwner<typename std::remove_cvref_t<Fields>::OwnerType...>::type;
+    using Owner = typename DeduceOwner<typename std::remove_cvref_t<Fields>::Owner...>::type;
     return makeJsonFieldSet<Owner>(std::move(fields)...);
 }
 
