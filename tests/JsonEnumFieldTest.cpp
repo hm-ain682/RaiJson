@@ -1,5 +1,6 @@
 import rai.json.json_field_set;
 import rai.json.json_field;
+import rai.json.json_converter;
 import rai.json.json_writer;
 import rai.json.json_parser;
 import rai.json.json_io;

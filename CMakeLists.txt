@@ -24,6 +24,7 @@ target_sources(RaiJson
             src/IO/JsonParser.cppm
             src/IO/JsonTokenManager.cppm
             src/IO/JsonTokenizer.cppm
+            src/IO/JsonConverter.cppm
             src/IO/JsonField.cppm
             src/IO/JsonPolymorphic.cppm
             src/IO/JsonFieldSet.cppm

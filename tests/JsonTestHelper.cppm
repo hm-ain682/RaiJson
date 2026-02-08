@@ -6,7 +6,7 @@ module;
 export module rai.json.test_helper;
 
 import rai.json.json_io;
-import rai.json.json_field;
+import rai.json.json_converter;
 
 export namespace rai::json::test {
 
