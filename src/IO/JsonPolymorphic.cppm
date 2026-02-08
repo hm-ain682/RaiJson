@@ -159,7 +159,8 @@ struct PolymorphicConverter {
 
     // Accept a MapReference-like object (SortedHashArrayMap is convertible)
     template <typename Entries>
-    constexpr explicit PolymorphicConverter(const Entries& entries, const char* jsonKey = "type", bool allowNull = true)
+    constexpr explicit PolymorphicConverter(
+        const Entries& entries, const char* jsonKey = "type", bool allowNull = true)
         : entries_(entries), jsonKey_(jsonKey), allowNull_(allowNull) {}
 
     Ptr read(JsonParser& parser) const {
@@ -189,58 +190,33 @@ private:
     bool allowNull_{true};
 };
 
-// Convenience factory: build a JsonField (with a static PolymorphicConverter) from an entries map
-export template <typename MemberPtr, typename Map>
-constexpr auto makeJsonPolymorphicField(MemberPtr memberPtr, const char* keyName,
-    const Map& entries, const char* jsonKey = "type")
-    requires IsSmartOrRawPointer<MemberPointerValueType<MemberPtr>> {
-    using Value = MemberPointerValueType<MemberPtr>;
-    static const PolymorphicConverter<Value> conv(entries, jsonKey);
-    using Behavior = RequiredFieldOmitBehavior<Value>;
-    return JsonField<MemberPtr, PolymorphicConverter<Value>, Behavior>(
-        memberPtr, keyName, std::cref(conv), Behavior{});
+/// @brief ポリモーフィック型用のコンバータを構築して返す。
+/// @tparam Ptr ポインタ型（unique_ptr/shared_ptr/生ポインタ）
+/// @param entries 型名からファクトリ関数へのマップ
+/// @param jsonKey 型判別用のJSONキー名
+/// @param allowNull null許容かどうか
+export template <typename Ptr, typename Map>
+    requires IsSmartOrRawPointer<Ptr>
+constexpr auto getPolymorphicConverter(
+    const Map& entries, const char* jsonKey = "type", bool allowNull = true) {
+    return PolymorphicConverter<Ptr>(entries, jsonKey, allowNull);
 }
 
-// Overload for SortedHashArrayMap-style entries
-export template <typename MemberPtr, size_t N, typename Traits>
-constexpr auto makeJsonPolymorphicField(MemberPtr memberPtr, const char* keyName,
-    const collection::SortedHashArrayMap<std::string_view,
-        PolymorphicTypeFactory<MemberPointerValueType<MemberPtr>>, N, Traits>& entries,
-    const char* jsonKey = "type") {
-    using MapRef = collection::MapReference<std::string_view,
-        PolymorphicTypeFactory<MemberPointerValueType<MemberPtr>>>;
-    return makeJsonPolymorphicField<MemberPtr, MapRef>(
-        memberPtr, keyName, MapRef(entries), jsonKey);
-} 
-
-/// @brief ポリモーフィックな配列（vector<std::unique_ptr<BaseType>>）用のファクトリ helper
-export template <typename MemberPtr, typename Map>
-constexpr auto makeJsonPolymorphicArrayField(MemberPtr memberPtr, const char* keyName,
-    const Map& entries, const char* jsonKey = "type") {
-    using Container = MemberPointerValueType<MemberPtr>;
+/// @brief ポリモーフィックな配列用のコンバータを構築して返す。
+/// @tparam Container ポインタ要素を持つコンテナ型
+/// @param entries 型名からファクトリ関数へのマップ
+/// @param jsonKey 型判別用のJSONキー名
+/// @param allowNull null許容かどうか
+export template <typename Container, typename Map>
+    requires IsContainer<Container>
+    && IsSmartOrRawPointer<std::remove_cvref_t<std::ranges::range_value_t<Container>>>
+constexpr auto getPolymorphicArrayConverter(
+    const Map& entries, const char* jsonKey = "type", bool allowNull = true) {
     using ElementPtr = std::remove_cvref_t<std::ranges::range_value_t<Container>>;
-    static const PolymorphicConverter<ElementPtr> elemConv(entries, jsonKey);
-    using ContainerConv = ContainerConverter<Container, PolymorphicConverter<ElementPtr>>;
-    static const ContainerConv conv(elemConv);
-    using Behavior = RequiredFieldOmitBehavior<Container>;
-    return JsonField<MemberPtr, ContainerConv, Behavior>(
-        memberPtr, keyName, std::cref(conv), Behavior{});
-}
-// Convenience factory: build a JsonField for a container of polymorphic pointer elements
-export template <typename MemberPtr, typename Map>
-constexpr auto makeJsonPolymorphicArrayField(MemberPtr memberPtr, const char* keyName,
-    const Map& entries, const char* jsonKey = "type")
-    requires IsContainer<MemberPointerValueType<MemberPtr>>
-    && IsSmartOrRawPointer<std::remove_cvref_t<std::ranges::range_value_t<
-        MemberPointerValueType<MemberPtr>>>> {
-    using Container = MemberPointerValueType<MemberPtr>;
-    using ElementPtr = std::remove_cvref_t<std::ranges::range_value_t<Container>>;
-    static const PolymorphicConverter<ElementPtr> elemConv(entries, jsonKey);
-    using ContainerConv = ContainerConverter<Container, PolymorphicConverter<ElementPtr>>;
-    static const ContainerConv conv(elemConv);
-    using Behavior = RequiredFieldOmitBehavior<Container>;
-    return JsonField<MemberPtr, ContainerConv, Behavior>(
-        memberPtr, keyName, std::cref(conv), Behavior{});
+    static const auto elementConverter =
+        getPolymorphicConverter<ElementPtr>(entries, jsonKey, allowNull);
+    using ElementConverter = std::remove_cvref_t<decltype(elementConverter)>;
+    return ContainerConverter<Container, ElementConverter>(elementConverter);
 }
 
 

@@ -146,10 +146,12 @@ struct ComplexData {
     const IJsonFieldSet& jsonFields() const {
         static const auto itemsConverter = getContainerConverter<decltype(items)>();
         static const auto collectionsConverter = getContainerConverter<decltype(collections)>();
+        static const auto nodeConverter = getPolymorphicConverter<decltype(node)>(
+            baseNodeEntriesMap);
         static const auto fields = makeJsonFieldSet<ComplexData>(
             getRequiredField(&ComplexData::name, "name"),
             getRequiredField(&ComplexData::level, "level"),
-            makeJsonPolymorphicField(&ComplexData::node, "node", baseNodeEntriesMap),
+            getRequiredField(&ComplexData::node, "node", nodeConverter),
             getRequiredField(&ComplexData::items, "items", itemsConverter),
             getRequiredField(&ComplexData::collections, "collections", collectionsConverter)
         );

@@ -159,9 +159,15 @@ struct Drawing {
     std::vector<std::unique_ptr<Shape>> shapes;
 
     const rai::json::IJsonFieldSet& jsonFields() const {
+        static const auto mainShapeConverter =
+            rai::json::getPolymorphicConverter<std::unique_ptr<Shape>>(
+                shapeEntriesMap, "kind");
+        static const auto shapesConverter =
+            rai::json::getPolymorphicArrayConverter<decltype(shapes)>(
+                shapeEntriesMap, "kind");
         static const auto fields = rai::json::makeJsonFieldSet<Drawing>(
-            rai::json::makeJsonPolymorphicField(&Drawing::mainShape, "mainShape", shapeEntriesMap, "kind"),
-            rai::json::makeJsonPolymorphicArrayField(&Drawing::shapes, "shapes", shapeEntriesMap, "kind")
+            rai::json::getRequiredField(&Drawing::mainShape, "mainShape", mainShapeConverter),
+            rai::json::getRequiredField(&Drawing::shapes, "shapes", shapesConverter)
         );
         return fields;
     }

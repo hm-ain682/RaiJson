@@ -136,9 +136,13 @@ struct Holder {
     std::vector<std::unique_ptr<PB>> arr;
 
     const IJsonFieldSet& jsonFields() const {
+        static const auto itemConverter = getPolymorphicConverter<decltype(item)>(
+            pbEntriesMap, "kind");
+        static const auto arrayConverter =
+            getPolymorphicArrayConverter<decltype(arr)>(pbEntriesMap, "kind");
         static const auto fields = makeJsonFieldSet<Holder>(
-            makeJsonPolymorphicField(&Holder::item, "item", pbEntriesMap, "kind"),
-            makeJsonPolymorphicArrayField(&Holder::arr, "arr", pbEntriesMap, "kind")
+            getRequiredField(&Holder::item, "item", itemConverter),
+            getRequiredField(&Holder::arr, "arr", arrayConverter)
         );
         return fields;
     }
@@ -989,6 +993,12 @@ TEST(JsonElementConverterTest, VariantElementConverterDerivedCustomizesString) {
 
     struct MyElemConv : VariantElementConverter<Var> {
         using VariantElementConverter<Var>::write; // bring base template into scope for other types
+
+        void write(JsonWriter& writer, const Var& value) const {
+            std::visit([&](const auto& inner) {
+                this->write(writer, inner);
+            }, value);
+        }
 
         void write(JsonWriter& writer, const std::string& value) const {
             // Prefix strings with marker so we can detect customization
