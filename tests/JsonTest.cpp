@@ -1,12 +1,12 @@
 import rai.serialization.json_field;
-import rai.serialization.json_converter;
-import rai.serialization.json_polymorphic;
+import rai.serialization.object_converter;
+import rai.serialization.polymorphic_converter;
 import rai.serialization.json_writer;
 import rai.serialization.json_parser;
-import rai.serialization.json_field_set;
+import rai.serialization.object_bridge;
 import rai.serialization.json_io;
 import rai.serialization.test_helper;
-import rai.serialization.json_token_manager;
+import rai.serialization.token_manager;
 import rai.collection.sorted_hash_array_map;
 #include <gtest/gtest.h>
 #include <string>
@@ -29,9 +29,9 @@ struct A {
 
     /// @brief JSONフィールドを取得する仮想関数。
     /// @return フィールドプランへの参照。
-    /// @note 戻り値はIJsonFieldSet&で、派生クラスでオーバーライド可能。
+    /// @note 戻り値はObjectBridge&で、派生クラスでオーバーライド可能。
     ///       getFieldSetを使用することで型名を簡潔に記述。
-    virtual const IJsonFieldSet& jsonFields() const {
+    virtual const ObjectBridge& jsonFields() const {
         static const auto fields = getFieldSet(
             getRequiredField(&A::w, "w"),
             getRequiredField(&A::x, "x")
@@ -48,7 +48,7 @@ struct B : public A {
     /// @return フィールドプランへの参照。
     /// @note A::wとB::yのみを公開（A::xは含まない）。
     ///       getFieldSetを使用することで型名を簡潔に記述。
-    const IJsonFieldSet& jsonFields() const override {
+    const ObjectBridge& jsonFields() const override {
         static const auto fields = getFieldSet(
             getRequiredField(&A::w, "w"),
             getRequiredField(&B::y, "y")
@@ -65,7 +65,7 @@ struct C : public A {
     /// @return フィールドプランへの参照。
     /// @note A::wとC::zのみを公開（A::xは含まない）。
     ///       getFieldSetを使用することで型名を簡潔に記述。
-    const IJsonFieldSet& jsonFields() const override {
+    const ObjectBridge& jsonFields() const override {
         static const auto fields = getFieldSet(
             getRequiredField(&A::w, "w"),
             getRequiredField(&C::z, "z")
@@ -81,8 +81,8 @@ struct C : public A {
 struct PB {
     virtual ~PB() = default;
 
-    virtual const IJsonFieldSet& jsonFields() const {
-        static const auto f = JsonFieldSet<PB>{};
+    virtual const ObjectBridge& jsonFields() const {
+        static const auto f = FieldsObjectBridge<PB>{};
         return f;
     }
 
@@ -95,7 +95,7 @@ struct PB {
 struct POne : public PB {
     int x = 0;
 
-    const IJsonFieldSet& jsonFields() const override {
+    const ObjectBridge& jsonFields() const override {
         static const auto f = getFieldSet(
             getRequiredField(&POne::x, "x")
         );
@@ -111,7 +111,7 @@ struct POne : public PB {
 struct PTwo : public PB {
     std::string s;
 
-    const IJsonFieldSet& jsonFields() const override {
+    const ObjectBridge& jsonFields() const override {
         static const auto f = getFieldSet(
             getRequiredField(&PTwo::s, "s")
         );
@@ -136,7 +136,7 @@ struct Holder {
     std::unique_ptr<PB> item;
     std::vector<std::unique_ptr<PB>> arr;
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         static const auto itemConverter = getPolymorphicConverter<decltype(item)>(
             pbEntriesMap, "kind");
         static const auto arrayConverter =
@@ -180,7 +180,7 @@ struct DefaultFieldTest {
     int a = 0;
     int b = 0;
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         static const auto fields = getFieldSet(
             getRequiredField(&DefaultFieldTest::a, "a"),
             getDefaultOmittedField(&DefaultFieldTest::b, "b", 42)
@@ -194,7 +194,7 @@ struct SkipFieldTest {
     int b = 0;  ///< 省略判定対象。
 
     /// @brief JSONフィールド定義を返す。
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         static const auto fields = getFieldSet(
             getRequiredField(&SkipFieldTest::a, "a"),
             getDefaultOmittedField(&SkipFieldTest::b, "b", 0)
@@ -270,7 +270,7 @@ struct IntegerTypes {
     long long ll = 0;
     unsigned long long ull = 0;
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         static const auto fields = getFieldSet(
             getRequiredField(&IntegerTypes::s, "s"),
             getRequiredField(&IntegerTypes::us, "us"),
@@ -324,7 +324,7 @@ struct FloatingPointTypes {
     double d = 0.0;
     long double ld = 0.0L;
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         static const auto fields = getFieldSet(
             getRequiredField(&FloatingPointTypes::f, "f"),
             getRequiredField(&FloatingPointTypes::d, "d"),
@@ -365,7 +365,7 @@ struct CharacterTypes {
     char32_t c32 = U'\U0001F389';
     wchar_t wc = L'\u30A6';
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         static const auto fields = getFieldSet(
             getRequiredField(&CharacterTypes::c, "c"),
             getRequiredField(&CharacterTypes::sc, "sc"),
@@ -411,7 +411,7 @@ TEST(JsonCharacterTest, ReadWriteRoundTrip) {
 struct TestHolder {
     char16_t c16 = 0;
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         static const auto fields = getFieldSet(
             getRequiredField(&TestHolder::c16, "c16")
         );
@@ -448,7 +448,7 @@ struct NestedChild {
     int value = 0;
     std::string name;
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         static const auto fields = getFieldSet(
             getRequiredField(&NestedChild::value, "value"),
             getRequiredField(&NestedChild::name, "name")
@@ -466,7 +466,7 @@ struct NestedParent {
     NestedChild child;
     bool flag = false;
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         static const auto fields = getFieldSet(
             getRequiredField(&NestedParent::child, "child"),
             getRequiredField(&NestedParent::flag, "flag")
@@ -502,7 +502,7 @@ struct PointerHolder {
     std::unique_ptr<int> ptr;
     std::vector<std::unique_ptr<std::string>> ptrVec;
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
             // Provide explicit element/container converter for vector of unique_ptr<string>
             using Element = std::unique_ptr<std::string>;
             auto& elementConverter = getUniquePtrConverter<Element>();
@@ -575,7 +575,7 @@ struct DispatchValue {
 struct TokenDispatchHolder {
     DispatchValue value;
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         /// @brief テスト用の簡易トークンコンバータ。
         /// 必要最小限のトークンハンドラだけを実装する。
         struct FromConv : TokenConverter<DispatchValue>
@@ -756,7 +756,7 @@ struct Tag {
     std::string label;
     int priority = 0;
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         static const auto fields = getFieldSet(
             getRequiredField(&Tag::label, "label"),
             getRequiredField(&Tag::priority, "priority")
@@ -776,7 +776,7 @@ struct Tag {
 struct SetFieldVectorHolder {
     std::vector<Tag> tags;
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         static const auto containerConverter =
             getContainerConverter<decltype(tags)>();
         static const auto fields = getFieldSet(
@@ -813,7 +813,7 @@ TEST(JsonContainerFieldTest, VectorEmptyReadWriteRoundTrip) {
 struct SetFieldSetHolder {
     std::set<std::string> tags;
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         static const auto containerConverter =
             getContainerConverter<decltype(tags)>();
         static const auto fields = getFieldSet(
@@ -850,7 +850,7 @@ struct Point {
     int x = 0;
     int y = 0;
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         static const auto fields = getFieldSet(
             getRequiredField(&Point::x, "x"),
             getRequiredField(&Point::y, "y")
@@ -870,7 +870,7 @@ struct Point {
 struct SetFieldObjectHolder {
     std::vector<Point> points;
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         static const auto containerConverter =
             getContainerConverter<decltype(points)>();
         static const auto fields = getFieldSet(
@@ -901,7 +901,7 @@ TEST(JsonContainerFieldTest, ObjectElementReadWriteRoundTrip) {
 struct RWElement {
     int x = 0;
 
-    const IJsonFieldSet& jsonFields() const {
+    const ObjectBridge& jsonFields() const {
         static const auto fields = getFieldSet(
             getRequiredField(&RWElement::x, "x")
         );
@@ -916,7 +916,7 @@ struct RWElement {
 TEST(JsonElementConverterTest, ContainerUsesElementConverter) {
     struct Holder {
         std::vector<RWElement> v;
-        const IJsonFieldSet& jsonFields() const {
+        const ObjectBridge& jsonFields() const {
             static const auto containerConverter =
                 getContainerConverter<decltype(v)>();
             static const auto fields = getFieldSet(
@@ -942,7 +942,7 @@ TEST(JsonElementConverterTest, ContainerUsesElementConverter) {
 TEST(JsonElementConverterTest, UniquePtrUsesElementConverter) {
     struct Holder {
         std::unique_ptr<RWElement> item;
-        const IJsonFieldSet& jsonFields() const {
+        const ObjectBridge& jsonFields() const {
             static const auto uniquePtrConverter =
                 getUniquePtrConverter<decltype(item)>();
             static const auto fields = getFieldSet(
@@ -970,7 +970,7 @@ TEST(JsonElementConverterTest, UniquePtrUsesElementConverter) {
 TEST(JsonElementConverterTest, VariantUsesElementConverter) {
     struct Holder {
         std::variant<int, RWElement> v;
-        const IJsonFieldSet& jsonFields() const {
+        const ObjectBridge& jsonFields() const {
             static const auto converter = getVariantConverter<decltype(v)>();
             static const auto fields = getFieldSet(
                 getRequiredField(&Holder::v, "v", converter)
@@ -1022,7 +1022,7 @@ TEST(JsonElementConverterTest, VariantElementConverterDerivedCustomizesString) {
 
     struct Holder {
         Var v;
-        const IJsonFieldSet& jsonFields() const {
+        const ObjectBridge& jsonFields() const {
             static const MyElemConv elemConv{};
             static const auto conv = getVariantConverter<Var>(elemConv);
             static const auto fields = getFieldSet(
@@ -1052,7 +1052,7 @@ TEST(JsonElementConverterTest, VariantElementConverterDerivedCustomizesString) {
 TEST(JsonElementConverterTest, NestedContainerUsesElementConverter) {
     struct Holder {
         std::vector<std::vector<RWElement>> v;
-        const IJsonFieldSet& jsonFields() const {
+        const ObjectBridge& jsonFields() const {
             static const JsonFieldsConverter<RWElement> innerElemConv{};
             using RWElementVector = std::vector<RWElement>;
             static const auto innerConverter =
@@ -1084,7 +1084,7 @@ TEST(JsonElementConverterExplicitTest, ContainerOfEnumWithExplicitContainerConve
 
     struct Holder {
         std::vector<Color> v;
-        const IJsonFieldSet& jsonFields() const {
+        const ObjectBridge& jsonFields() const {
             static const auto containerConverter =
                 getContainerConverter<decltype(v)>(enumConverter);
             static const auto fields = getFieldSet(
@@ -1108,7 +1108,7 @@ TEST(JsonElementConverterExplicitTest, ContainerOfEnumWithExplicitContainerConve
 TEST(JsonElementConverterExplicitTest, ContainerWithExplicitElementConverter) {
     struct Holder {
         std::vector<RWElement> v;
-        const IJsonFieldSet& jsonFields() const {
+        const ObjectBridge& jsonFields() const {
             static const JsonFieldsConverter<RWElement> elementConverter{};
             static const auto containerConverter =
                 getContainerConverter<decltype(v)>(elementConverter);

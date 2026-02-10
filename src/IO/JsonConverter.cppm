@@ -16,11 +16,11 @@ module;
 #include <ranges>
 #include <span>
 
-export module rai.serialization.json_converter;
+export module rai.serialization.object_converter;
 
 import rai.serialization.json_writer;
 import rai.serialization.json_parser;
-import rai.serialization.json_token_manager;
+import rai.serialization.token_manager;
 
 import rai.collection.sorted_hash_array_map;
 
@@ -32,7 +32,7 @@ export namespace rai::serialization {
 /// @tparam Converter コンバータ型
 /// @tparam Value コンバータが扱う値の型
 template <typename Converter, typename Value>
-concept IsJsonConverter = std::is_class_v<Converter>
+concept IsObjectConverter = std::is_class_v<Converter>
     && requires { typename Converter::Value; }
     && std::is_same_v<typename Converter::Value, Value>
     && requires(const Converter& converter, JsonWriter& writer, const Value& value) {
@@ -291,8 +291,8 @@ struct ContainerConverter {
         "ContainerConverter requires Container to be a container type");
     using Value = Container;
     using Element = std::remove_cvref_t<std::ranges::range_value_t<Container>>;
-    static_assert(IsJsonConverter<ElementConverter, Element>,
-        "ElementConverter must satisfy IsJsonConverter for container element type");
+    static_assert(IsObjectConverter<ElementConverter, Element>,
+        "ElementConverter must satisfy IsObjectConverter for container element type");
     using ElementConverterT = std::remove_cvref_t<ElementConverter>;
     static_assert(std::is_same_v<typename ElementConverterT::Value, Element>,
         "ElementConverter::Value must match container element type");
@@ -372,8 +372,8 @@ struct UniquePtrConverter {
     using Element = typename T::element_type;
     using ElemConvT = std::remove_cvref_t<TargetConverter>;
     static_assert(IsUniquePtr<T>, "UniquePtrConverter requires T to be a unique_ptr-like type");
-    static_assert(IsJsonConverter<ElemConvT, Element>,
-        "UniquePtrConverter requires ElementConverter to be a JsonConverter for element type");
+    static_assert(IsObjectConverter<ElemConvT, Element>,
+        "UniquePtrConverter requires ElementConverter to be an ObjectConverter for element type");
 
     // デフォルト要素コンバータへの参照を返すユーティリティ（静的寿命）
     static const ElemConvT& defaultTargetConverter() {
@@ -429,7 +429,8 @@ constexpr auto getUniquePtrConverter(const ElementConverter& elementConverter) {
 
 // ******************************************************************************** トークン種別毎の分岐用
 
-/// @brief トークン種別ごとの読み取り／書き出しを提供する基底的なコンバータ
+/// @brief トークン種別ごとの読み取り／書き出しを提供する基底的な変換方法。
+/// @tparam ValueType 値の型
 template <typename ValueType>
 struct TokenConverter {
     using Value = ValueType;
@@ -497,7 +498,7 @@ private:
     }
 };
 
-/// @brief トークン種別に応じた分岐コンバータ（JsonTokenDispatchField と同等）
+/// @brief トークン種別に応じた変換方法
 template <typename ValueType, typename TokenConv = TokenConverter<ValueType>>
 struct TokenDispatchConverter {
     using Value = ValueType;

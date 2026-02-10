@@ -21,12 +21,12 @@ module;
 #include <set>
 #include <unordered_set>
 
-export module rai.serialization.json_polymorphic;
+export module rai.serialization.polymorphic_converter;
 
 import rai.serialization.json_writer;
 import rai.serialization.json_parser;
-import rai.serialization.json_token_manager;
-import rai.serialization.json_converter;
+import rai.serialization.token_manager;
+import rai.serialization.object_converter;
 
 import rai.collection.sorted_hash_array_map;
 
@@ -158,7 +158,7 @@ std::string getTypeNameFromMap(const BaseType& obj, Map entries) {
     throw std::runtime_error(std::string("Unknown polymorphic type: ") + typeid(obj).name());
 }
 
-// PolymorphicConverter: ポインタ型（unique_ptr/shared_ptr/生ポインタ）に対して IsJsonConverter を満たすコンバータ
+// PolymorphicConverter: ポインタ型（unique_ptr/shared_ptr/生ポインタ）に対して IsObjectConverter を満たすコンバータ
 export template <typename Ptr>
     requires IsSmartOrRawPointer<Ptr>
 struct PolymorphicConverter {

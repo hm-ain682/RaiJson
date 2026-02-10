@@ -6,7 +6,7 @@ module;
 export module rai.serialization.test_helper;
 
 import rai.serialization.json_io;
-import rai.serialization.json_converter;
+import rai.serialization.object_converter;
 
 export namespace rai::serialization::test {
 

@@ -12,7 +12,7 @@ module;
 #include <exception>
 #include <utility>
 
-export module rai.serialization.json_token_manager;
+export module rai.serialization.token_manager;
 
 export namespace rai::serialization {
 

@@ -27,10 +27,10 @@ module;
 
 export module rai.serialization.json_field;
 
-import rai.serialization.json_converter;
+import rai.serialization.object_converter;
 import rai.serialization.json_writer;
 import rai.serialization.json_parser;
-import rai.serialization.json_token_manager;
+import rai.serialization.token_manager;
 
 import rai.collection.sorted_hash_array_map;
 
@@ -141,7 +141,7 @@ struct RequiredFieldOmitBehavior {
 /// @tparam Behavior 挙動型
 /// @tparam Value 値型
 export template <typename Behavior, typename Value>
-concept IsJsonFieldOmittedBehavior = requires(const Behavior& behavior, const Value& value,
+concept IsFieldOmittedBehavior = requires(const Behavior& behavior, const Value& value,
     Value& outValue, std::string_view key) {
     { behavior.shouldSkipWrite(value) } -> std::same_as<bool>;
     { behavior.applyMissing(outValue, key) } -> std::same_as<void>;
@@ -155,10 +155,10 @@ struct JsonField {
     using Traits = MemberPointerTraits<MemberPtr>; 
     using Owner = typename Traits::Owner;
     using Value = typename Traits::Value;
-    static_assert(IsJsonConverter<Converter, MemberPointerValueType<MemberPtr>>,
-        "Converter must satisfy IsJsonConverter for the member value type");
-    static_assert(IsJsonFieldOmittedBehavior<OmittedBehavior, Value>,
-        "OmittedBehavior must satisfy IsJsonFieldOmittedBehavior for the member value type");
+    static_assert(IsObjectConverter<Converter, MemberPointerValueType<MemberPtr>>,
+        "Converter must satisfy IsObjectConverter for the member value type");
+    static_assert(IsFieldOmittedBehavior<OmittedBehavior, Value>,
+        "OmittedBehavior must satisfy IsFieldOmittedBehavior for the member value type");
 
     /// @brief コンストラクタ（省略時挙動を明示的に指定する版）。
     /// @param memberPtr メンバポインタ
@@ -293,7 +293,7 @@ constexpr auto getInitialOmittedField(MemberPtr memberPtr, const char* keyName) 
 /// @param keyName JSONキー名
 /// @param converter 値型に対応するコンバータ
 export template <typename MemberPtr, typename Converter>
-    requires IsJsonConverter<Converter, MemberPointerValueType<MemberPtr>>
+    requires IsObjectConverter<Converter, MemberPointerValueType<MemberPtr>>
 constexpr auto getInitialOmittedField(MemberPtr memberPtr, const char* keyName,
     const Converter& converter) {
     using Value = MemberPointerValueType<MemberPtr>;

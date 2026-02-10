@@ -1,5 +1,5 @@
 // @file JsonIO.cppm
-// @brief JSON入出力の統合インターフェース。JsonFieldSetと連携してJSON変換を提供する。
+// @brief JSON入出力の統合インターフェース。ObjectBridgeと連携してJSON変換を提供する。
 
 module;
 #include <cassert>
@@ -14,12 +14,12 @@ module;
 
 export module rai.serialization.json_io;
 
-import rai.serialization.json_converter;
-import rai.serialization.json_field_set;
+import rai.serialization.object_converter;
+import rai.serialization.object_bridge;
 import rai.serialization.json_writer;
 import rai.serialization.json_parser;
 import rai.serialization.json_tokenizer;
-import rai.serialization.json_token_manager;
+import rai.serialization.token_manager;
 import rai.serialization.reading_ahead_buffer;
 import rai.serialization.parallel_input_stream_source;
 import rai.common.thread_pool;

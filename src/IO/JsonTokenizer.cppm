@@ -28,7 +28,7 @@ module;
 
 export module rai.serialization.json_tokenizer;
 
-import rai.serialization.json_token_manager;
+import rai.serialization.token_manager;
 
 export namespace rai::serialization {
 
