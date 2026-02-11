@@ -1,4 +1,4 @@
-/// @file JsonConverter.cppm
+/// @file ObjectConverter.cppm
 /// @brief JSONの値変換コンバータ群を提供する。
 
 module;

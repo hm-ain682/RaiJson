@@ -1,4 +1,4 @@
-// @file JsonTokenManager.cppm
+// @file TokenManager.cppm
 // @brief JSONトークンの定義とトークン管理クラス
 
 module;
@@ -108,7 +108,7 @@ struct JsonToken {
 // ******************************************************************************** デフォルトのトークン管理クラス
 // @brief dequeを使用したトークン管理クラス
 // @note 先頭要素のpopがO(1)で効率的
-class JsonTokenManager {
+class TokenManager {
 public:
     // @brief トークンを追加
     // @param token 追加するトークン

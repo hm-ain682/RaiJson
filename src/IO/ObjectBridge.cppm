@@ -1,4 +1,4 @@
-// @file JsonFieldSet.cppm
+// @file ObjectBridge.cppm
 // @brief JSONフィールドセットの定義。構造体とJSONの相互変換を提供する。
 
 module;

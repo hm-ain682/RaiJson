@@ -265,13 +265,13 @@ struct CustomData {
 - `src/Common/SortedHashArrayMap.cppm`: Fixed-size hash + sorted array map for fast key lookup without allocations.
 - `src/Common/ThreadPool.cppm`: Lightweight task queue used by parallel I/O helpers.
 - `src/IO/JsonTokenizer.cppm`: JSON5 tokenizer with comment and whitespace handling.
-- `src/IO/JsonTokenManager.cppm`: Token queue abstraction for thread-safe parsing.
+- `src/IO/TokenManager.cppm`: Token queue abstraction for thread-safe parsing.
 - `src/IO/JsonParser.cppm`: Token-based parser with strong type checks and unknown-key tracking.
 - `src/IO/JsonWriter.cppm`: JSON5 writer with identifier-aware key emission and escaping.
-- `src/IO/JsonConverter.cppm`: Converters for primitives, enums, containers, pointers, and custom types.
-- `src/IO/JsonPolymorphic.cppm`: Polymorphic converters with type tags.
+- `src/IO/ObjectConverter.cppm`: Converters for primitives, enums, containers, pointers, and custom types.
+- `src/IO/PolymorphicConverter.cppm`: Polymorphic converters with type tags.
 - `src/IO/JsonField.cppm`: Field descriptors and omit behaviors.
-- `src/IO/JsonFieldSet.cppm`: Field-set reflection and (de)serialization glue.
+- `src/IO/ObjectBridge.cppm`: Field-set reflection and (de)serialization glue.
 - `src/IO/JsonIO.cppm`: High-level helpers for reading/writing strings, files, and streams.
 
 ---

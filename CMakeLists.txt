@@ -28,12 +28,12 @@ target_sources(RaiSerialization
             src/IO/ParallelInputStreamSource.cppm
             src/IO/JsonWriter.cppm
             src/IO/JsonParser.cppm
-            src/IO/JsonTokenManager.cppm
+            src/IO/TokenManager.cppm
             src/IO/JsonTokenizer.cppm
-            src/IO/JsonConverter.cppm
+            src/IO/ObjectConverter.cppm
             src/IO/JsonField.cppm
-            src/IO/JsonPolymorphic.cppm
-            src/IO/JsonFieldSet.cppm
+            src/IO/PolymorphicConverter.cppm
+            src/IO/ObjectBridge.cppm
             src/IO/JsonIO.cppm
 )
 

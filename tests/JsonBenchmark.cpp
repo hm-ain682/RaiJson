@@ -379,9 +379,9 @@ static void runSequentialPipeline(
     constexpr std::size_t aheadSize = 8;
     buffer.reserve(buffer.size() + aheadSize);
     ReadingAheadBuffer inputSource(std::move(buffer), aheadSize);
-    JsonTokenManager tokenManager;
+    TokenManager tokenManager;
     StdoutMessageOutput warningOutput;
-    JsonTokenizer<ReadingAheadBuffer, JsonTokenManager> tokenizer(
+    JsonTokenizer<ReadingAheadBuffer, TokenManager> tokenizer(
         inputSource, tokenManager, warningOutput);
     tokenizer.tokenize();
     parseTime = timer.elapsedMicroseconds();
@@ -426,9 +426,9 @@ static void runInMemoryBenchmark(const std::string& jsonData,
         constexpr std::size_t aheadSize = 8;
         buffer.reserve(buffer.size() + aheadSize);
         ReadingAheadBuffer inputSource(std::move(buffer), aheadSize);
-        JsonTokenManager tokenManager;
+        TokenManager tokenManager;
         StdoutMessageOutput warningOutput;
-        JsonTokenizer<ReadingAheadBuffer, JsonTokenManager> tokenizer(
+        JsonTokenizer<ReadingAheadBuffer, TokenManager> tokenizer(
             inputSource, tokenManager, warningOutput);
         tokenizer.tokenize();
         double parseTime = timer.elapsedMicroseconds();

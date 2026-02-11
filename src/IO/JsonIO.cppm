@@ -95,9 +95,9 @@ template <HasJsonFields T>
 void readJsonFromBuffer(std::string&& buffer, T& out,
     std::vector<std::string>& unknownKeysOut) {
     ReadingAheadBuffer inputSource(std::move(buffer), aheadSize);
-    JsonTokenManager tokenManager;
+    TokenManager tokenManager;
     StdoutMessageOutput warningOutput;
-    JsonTokenizer<ReadingAheadBuffer, JsonTokenManager> tokenizer(
+    JsonTokenizer<ReadingAheadBuffer, TokenManager> tokenizer(
         inputSource, tokenManager, warningOutput);
     tokenizer.tokenize();
 
@@ -222,9 +222,9 @@ template <HasJsonFields T>
 void readJsonFileParallelImpl(std::ifstream& ifs, const std::string& filename, T& out,
     std::vector<std::string>& unknownKeysOut) {
     ParallelInputStreamSource inputSource(ifs);
-    JsonTokenManager tokenManager;
+    TokenManager tokenManager;
     StdoutMessageOutput warningOutput;
-    JsonTokenizer<ParallelInputStreamSource, JsonTokenManager> tokenizer(
+    JsonTokenizer<ParallelInputStreamSource, TokenManager> tokenizer(
         inputSource, tokenManager, warningOutput);
 
     std::mutex tokenizerExceptionMutex;
@@ -351,9 +351,9 @@ void readJsonString(const std::string& jsonText, T& out) {
     buffer.reserve(buffer.size() + aheadSize);
 
     ReadingAheadBuffer inputSource(std::move(buffer), aheadSize);
-    JsonTokenManager tokenManager;
+    TokenManager tokenManager;
     StdoutMessageOutput warningOutput;
-    JsonTokenizer<ReadingAheadBuffer, JsonTokenManager> tokenizer(
+    JsonTokenizer<ReadingAheadBuffer, TokenManager> tokenizer(
         inputSource, tokenManager, warningOutput);
     tokenizer.tokenize();
 
@@ -390,9 +390,9 @@ void readJsonFile(const std::string& filename, T& out) {
 
     // トークン化とパース
     ReadingAheadBuffer inputSource(std::move(buffer), aheadSize);
-    JsonTokenManager tokenManager;
+    TokenManager tokenManager;
     StdoutMessageOutput warningOutput;
-    JsonTokenizer<ReadingAheadBuffer, JsonTokenManager> tokenizer(
+    JsonTokenizer<ReadingAheadBuffer, TokenManager> tokenizer(
         inputSource, tokenManager, warningOutput);
     tokenizer.tokenize();
 

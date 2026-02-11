@@ -33,7 +33,7 @@ private:
 public:
     // @brief コンストラクタ（トークン管理オブジェクトを指定）
     // @param tokenManager トークン管理オブジェクトの参照
-    explicit JsonParser(JsonTokenManager& tokenManager) : tokenManager_(tokenManager) {}
+    explicit JsonParser(TokenManager& tokenManager) : tokenManager_(tokenManager) {}
 
     // ******************************************************************************** トークン読み取り
 public:
@@ -393,7 +393,7 @@ private:
 
     // ******************************************************************************** メンバー変数
 private:
-    JsonTokenManager& tokenManager_;       ///< トークン管理オブジェクトの参照
+    TokenManager& tokenManager_;       ///< トークン管理オブジェクトの参照
     std::vector<std::string> unknownKeys_{};  ///< 未知キー記録（診断用）
 
 public:
