@@ -1,4 +1,4 @@
-/// @file JsonField.cppm
+/// @file FieldSerializer.cppm
 /// @brief JSONフィールドの定義。構造体とJSONの相互変換を提供する。
 
 module;
@@ -25,7 +25,7 @@ module;
 #include <unordered_set>
 #include <span>
 
-export module rai.serialization.json_field;
+export module rai.serialization.field_serializer;
 
 import rai.serialization.object_converter;
 import rai.serialization.json_writer;
@@ -137,7 +137,7 @@ struct RequiredFieldOmitBehavior {
 
 // ******************************************************************************** フィールド
 
-/// @brief JsonFieldの省略時挙動を満たす型の concept。
+/// @brief FieldSerializerの省略時挙動を満たす型の concept。
 /// @tparam Behavior 挙動型
 /// @tparam Value 値型
 export template <typename Behavior, typename Value>
@@ -149,9 +149,9 @@ concept IsFieldOmittedBehavior = requires(const Behavior& behavior, const Value&
 
 /// @brief メンバー変数とJSON項目を対応付ける。
 export template <typename MemberPtr, typename Converter, typename OmittedBehavior>
-struct JsonField {
+struct FieldSerializer {
     static_assert(std::is_member_object_pointer_v<MemberPtr>,
-        "JsonField requires MemberPtr to be a member object pointer");
+        "FieldSerializer requires MemberPtr to be a member object pointer");
     using Traits = MemberPointerTraits<MemberPtr>; 
     using Owner = typename Traits::Owner;
     using Value = typename Traits::Value;
@@ -165,7 +165,7 @@ struct JsonField {
     /// @param keyName JSONキー名
     /// @param conv コンバータへの参照（呼び出し側で寿命を保証）
     /// @param behavior 省略時挙動
-    constexpr explicit JsonField(MemberPtr memberPtr, const char* keyName,
+    constexpr explicit FieldSerializer(MemberPtr memberPtr, const char* keyName,
         std::reference_wrapper<const Converter> conv, OmittedBehavior behavior)
         : member(memberPtr), converter_(conv), key(keyName),
           omittedBehavior_(std::move(behavior)) {}
@@ -202,15 +202,15 @@ private:
     OmittedBehavior omittedBehavior_{};                  ///< 省略時挙動
 };
 
-/// @brief JsonField の型推論ガイド（reference_wrapper + 省略時挙動）。
+/// @brief FieldSerializer の型推論ガイド（reference_wrapper + 省略時挙動）。
 /// @tparam MemberPtr メンバポインタ型
 /// @tparam Converter コンバータ型
 /// @tparam OmittedBehavior 省略時挙動型
 export template <typename MemberPtr, typename Converter, typename OmittedBehavior>
-JsonField(MemberPtr, const char*, std::reference_wrapper<const Converter>, OmittedBehavior)
-    -> JsonField<MemberPtr, Converter, OmittedBehavior>;
+FieldSerializer(MemberPtr, const char*, std::reference_wrapper<const Converter>, OmittedBehavior)
+    -> FieldSerializer<MemberPtr, Converter, OmittedBehavior>;
 
-/// @brief 値変換方法と省略時挙動を指定しJsonFieldを作って返す。
+/// @brief 値変換方法と省略時挙動を指定しFieldSerializerを作って返す。
 /// @param memberPtr メンバポインタ
 /// @param keyName JSONキー名
 /// @param converter 値型に対応するコンバータ
@@ -219,13 +219,13 @@ export template <typename MemberPtr, typename Converter, typename OmitBehavior>
 constexpr auto getField(MemberPtr memberPtr, const char* keyName,
     const Converter& converter, const OmitBehavior& omitBehavior) {
     using ConverterBody = std::remove_cvref_t<Converter>;
-    return JsonField<MemberPtr, ConverterBody, OmitBehavior>(
+    return FieldSerializer<MemberPtr, ConverterBody, OmitBehavior>(
         memberPtr, keyName, std::cref(converter), omitBehavior);
 }
 
-/// @brief 項目必須のJsonFieldを作って返す。
+/// @brief 項目必須のFieldSerializerを作って返す。
 ///        与えられた MemberPtr の値型（以下）に対するコンバータを使用する。
-///        基本型、HasJsonFields、HasReadJson/HasWriteJson
+///        基本型、HasSerializer、HasReadJson/HasWriteJson
 /// @param memberPtr メンバポインタ
 /// @param keyName JSONキー名
 export template <typename MemberPtr>
@@ -236,7 +236,7 @@ constexpr auto getRequiredField(MemberPtr memberPtr, const char* keyName) {
         RequiredFieldOmitBehavior<Value>{});
 }
 
-/// @brief 項目必須のJsonFieldを作って返す（コンバータ指定版）。
+/// @brief 項目必須のFieldSerializerを作って返す（コンバータ指定版）。
 /// @param memberPtr メンバポインタ
 /// @param keyName JSONキー名
 /// @param converter 値型に対応するコンバータ
@@ -247,9 +247,9 @@ constexpr auto getRequiredField(MemberPtr memberPtr, const char* keyName,
         RequiredFieldOmitBehavior<MemberPointerValueType<MemberPtr>>{});
 }
 
-/// @brief 読み込み時省略では既定値を代入し、書き込み時は既定値と等しい場合に省略するJsonFieldを返す。
+/// @brief 読み込み時省略では既定値を代入し、書き込み時は既定値と等しい場合に省略するFieldSerializerを返す。
 ///        与えられた MemberPtr の値型（以下）に対するコンバータを使用する。
-///        基本型、HasJsonFields、HasReadJson/HasWriteJson
+///        基本型、HasSerializer、HasReadJson/HasWriteJson
 /// @param memberPtr メンバポインタ
 /// @param keyName JSONキー名
 /// @param defaultValue 欠落時に代入し、書き込み時の省略判定に使う値
@@ -262,7 +262,7 @@ constexpr auto getDefaultOmittedField(MemberPtr memberPtr, const char* keyName,
     return getField(memberPtr, keyName, converter, behavior);
 }
 
-/// @brief 読み込み時省略では既定値を代入し、書き込み時は既定値と等しい場合に省略するJsonFieldを返す。
+/// @brief 読み込み時省略では既定値を代入し、書き込み時は既定値と等しい場合に省略するFieldSerializerを返す。
 /// @param memberPtr メンバポインタ
 /// @param keyName JSONキー名
 /// @param defaultValue 欠落時に代入し、書き込み時の省略判定に使う値
@@ -275,9 +275,9 @@ constexpr auto getDefaultOmittedField(MemberPtr memberPtr, const char* keyName,
     return getField(memberPtr, keyName, converter, behavior);
 }
 
-/// @brief 読み込み時省略では何も行わず、書き込み時も省略しないJsonFieldを返す。
+/// @brief 読み込み時省略では何も行わず、書き込み時も省略しないFieldSerializerを返す。
 ///        与えられた MemberPtr の値型（以下）に対するコンバータを使用する。
-///        基本型、HasJsonFields、HasReadJson/HasWriteJson
+///        基本型、HasSerializer、HasReadJson/HasWriteJson
 /// @param memberPtr メンバポインタ
 /// @param keyName JSONキー名
 export template <typename MemberPtr>
@@ -288,7 +288,7 @@ constexpr auto getInitialOmittedField(MemberPtr memberPtr, const char* keyName) 
     return getField(memberPtr, keyName, converter, behavior);
 }
 
-/// @brief 読み込み時省略では何も行わず、書き込み時も省略しないJsonFieldを返す。
+/// @brief 読み込み時省略では何も行わず、書き込み時も省略しないFieldSerializerを返す。
 /// @param memberPtr メンバポインタ
 /// @param keyName JSONキー名
 /// @param converter 値型に対応するコンバータ

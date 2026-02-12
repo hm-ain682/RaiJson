@@ -106,14 +106,14 @@ Ptr readPolymorphicInstance(
     auto instance = (*factory)();
     using BaseType = typename PointerElementType<Ptr>::type;
 
-    // HasJsonFieldsを持つ型の場合、残りのフィールドを読み取る
-    if constexpr (HasJsonFields<BaseType>) {
-        auto& fields = instance->jsonFields();
+    // HasSerializerを持つ型の場合、残りのフィールドを読み取る
+    if constexpr (HasSerializer<BaseType>) {
+        auto& fields = instance->serializer();
         BaseType* raw = std::to_address(instance);
         fields.readFields(parser, raw);
     }
     else {
-        // jsonFieldsを持たない型の場合、全フィールドをスキップ
+        // serializerを持たない型の場合、全フィールドをスキップ
         while (!parser.nextIsEndObject()) {
             std::string key = parser.nextKey();
             parser.noteUnknownKey(key);
@@ -190,7 +190,7 @@ struct PolymorphicConverter {
         std::string typeName = getTypeNameFromMap(*ptr, entries_);
         writer.key(jsonKey_);
         writer.writeObject(typeName);
-        auto& fields = ptr->jsonFields();
+        auto& fields = ptr->serializer();
         fields.writeFields(writer, std::to_address(ptr));
         writer.endObject();
     }

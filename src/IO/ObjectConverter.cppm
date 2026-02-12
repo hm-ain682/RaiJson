@@ -63,26 +63,26 @@ struct FundamentalConverter {
     }
 };
 
-/// @brief jsonFields()メンバー関数を持つかどうかを判定するconcept。
+/// @brief serializer()メンバー関数を持つかどうかを判定するconcept。
 /// @tparam T 判定対象の型。
 template <typename T>
-concept HasJsonFields = requires(const T& t) { t.jsonFields(); };
+concept HasSerializer = requires(const T& t) { t.serializer(); };
 
-/// @brief jsonFields を持つ型のコンバータ
+/// @brief serializer を持つ型のコンバータ
 template <typename T>
 struct JsonFieldsConverter {
-    static_assert(HasJsonFields<T> && std::default_initializable<T>,
-        "JsonFieldsConverter requires T to have jsonFields() and be default-initializable");
+    static_assert(HasSerializer<T> && std::default_initializable<T>,
+        "JsonFieldsConverter requires T to have serializer() and be default-initializable");
     using Value = T;
     void write(JsonWriter& writer, const T& obj) const {
-        auto& fields = obj.jsonFields();
+        auto& fields = obj.serializer();
         writer.startObject();
         fields.writeFields(writer, static_cast<const void*>(&obj));
         writer.endObject();
     }
     T read(JsonParser& parser) const {
         T obj{};
-        auto& fields = obj.jsonFields();
+        auto& fields = obj.serializer();
         parser.startObject();
         fields.readFields(parser, &obj);
         parser.endObject();
@@ -126,18 +126,18 @@ template <typename T>
 concept IsDefaultConverterSupported
     = IsFundamentalValue<T>
     || std::same_as<T, std::string>
-    || HasJsonFields<T>
+    || HasSerializer<T>
     || (HasReadJson<T> && HasWriteJson<T>);
 
 /// @brief 型 `T` に応じた既定のコンバータを返すユーティリティ。
-/// @note 基本型、`HasJsonFields`、`HasReadJson`/`HasWriteJson` を持つ型を自動的に扱い、その他の複雑な型は明確な static_assert で除外します。
+/// @note 基本型、`HasSerializer`、`HasReadJson`/`HasWriteJson` を持つ型を自動的に扱い、その他の複雑な型は明確な static_assert で除外します。
 template <typename T>
 constexpr auto& getConverter() {
     if constexpr (IsFundamentalValue<T> || std::same_as<T, std::string>) {
         static const FundamentalConverter<T> inst{};
         return inst;
     }
-    else if constexpr (HasJsonFields<T>) {
+    else if constexpr (HasSerializer<T>) {
         static const JsonFieldsConverter<T> inst{};
         return inst;
     }
@@ -463,7 +463,7 @@ struct TokenConverter {
     }
 
     Value readStartObject(JsonParser& parser) const {
-        if constexpr (HasJsonFields<Value> || (HasReadJson<Value> && HasWriteJson<Value>)) {
+        if constexpr (HasSerializer<Value> || (HasReadJson<Value> && HasWriteJson<Value>)) {
             return getConverter<Value>().read(parser);
         }
         else {
@@ -626,7 +626,7 @@ struct VariantElementConverter : TokenConverter<Variant> {
             // Evaluate alternatives in order; stop at the first that matches
             ((void)(!found && ([&]() {
                 using Alt = std::remove_cvref_t<typename std::variant_alternative_t<I, Variant>>;
-                if constexpr (HasJsonFields<Alt> || (HasReadJson<Alt> && HasWriteJson<Alt>)) {
+                if constexpr (HasSerializer<Alt> || (HasReadJson<Alt> && HasWriteJson<Alt>)) {
                     out = getConverter<Alt>().read(parser);
                     found = true;
                 }

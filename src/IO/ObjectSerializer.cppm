@@ -52,7 +52,7 @@ public:
 
 // ******************************************************************************** フィールド集合による永続化
 
-/// @brief JsonField互換のインターフェースを満たすか判定するconcept。
+/// @brief FieldSerializer互換のインターフェースを満たすか判定するconcept。
 /// @tparam Field 判定対象のフィールド型
 export template <typename Field>
 concept IsReadWriteField = requires(const Field& field, JsonParser& parser, JsonWriter& writer,
@@ -70,7 +70,7 @@ export template <typename Owner, typename... Fields>
 class FieldsObjectSerializer : public ObjectSerializer {
 private:
     static_assert((IsReadWriteField<std::remove_cvref_t<Fields>> && ...),
-        "FieldsObjectSerializer fields must satisfy JsonField-like interface");
+        "FieldsObjectSerializer fields must satisfy FieldSerializer-like interface");
     static_assert((std::is_base_of_v<typename std::remove_cvref_t<Fields>::Owner, Owner> && ...),
         "FieldsObjectSerializer fields must be accessible from Owner type");
 
@@ -149,7 +149,7 @@ public:
 private:
     /// @brief 指定インデックスのフィールドにアクセスする。
     /// @param index 対象フィールドの元インデックス。
-    /// @param visitor フィールドを受け取るファンクタ。引数にJsonField&を取る必要がある。
+    /// @param visitor フィールドを受け取るファンクタ。引数にFieldSerializer&を取る必要がある。
     template <typename Visitor>
     void visitField(std::size_t index, Visitor&& visitor) const {
         if (index >= N_) {
@@ -214,7 +214,7 @@ struct DeduceOwner<Owner> {
 template <typename Owner, typename Next, typename... Rest>
 struct DeduceOwner<Owner, Next, Rest...> {
     using Promoted = typename PromoteOwner<Owner, Next>::type;
-    static_assert(!std::is_same_v<Promoted, void>, "JsonField owner types are not compatible");
+    static_assert(!std::is_same_v<Promoted, void>, "FieldSerializer owner types are not compatible");
     using type = typename DeduceOwner<Promoted, Rest...>::type;
 };
 

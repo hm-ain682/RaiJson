@@ -1,5 +1,5 @@
 import rai.serialization.object_serializer;
-import rai.serialization.json_field;
+import rai.serialization.field_serializer;
 import rai.serialization.object_converter;
 import rai.serialization.json_writer;
 import rai.serialization.json_parser;
@@ -23,7 +23,7 @@ constexpr EnumEntry<Color> colorEntries[] = {
 struct CH {
     Color color = Color::Red;
 
-    const ObjectSerializer& jsonFields() const {
+    const ObjectSerializer& serializer() const {
         static const auto colorConverter = rai::serialization::getEnumConverter(colorEntries);
         static const auto fields = getFieldSet(
             rai::serialization::getRequiredField(&CH::color, "color", colorConverter)
@@ -39,7 +39,7 @@ struct CH {
 struct CH2 {
     Color color = Color::Red;
 
-    const ObjectSerializer& jsonFields() const {
+    const ObjectSerializer& serializer() const {
         static const auto colorConverter = rai::serialization::getEnumConverter<Color>({
             { Color::Red,   "red" },
             { Color::Green, "green" },

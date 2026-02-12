@@ -31,7 +31,7 @@ target_sources(RaiSerialization
             src/IO/TokenManager.cppm
             src/IO/JsonTokenizer.cppm
             src/IO/ObjectConverter.cppm
-            src/IO/JsonField.cppm
+            src/IO/FieldSerializer.cppm
             src/IO/PolymorphicConverter.cppm
             src/IO/ObjectSerializer.cppm
             src/IO/JsonIO.cppm

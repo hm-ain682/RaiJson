@@ -33,10 +33,10 @@ static constexpr std::size_t aheadSize = 8;        //< 先読み8byte
 /// @tparam T 変換対象の型。
 /// @param obj 変換するオブジェクト。
 /// @param os 出力先のストリーム。
-export template <HasJsonFields T>
+export template <HasSerializer T>
 void writeJsonToBuffer(const T& obj, std::ostream& os) {
     JsonWriter writer(os);
-    auto& fields = obj.jsonFields();
+    auto& fields = obj.serializer();
     writer.startObject();
     fields.writeFields(writer, &obj);
     writer.endObject();
@@ -46,7 +46,7 @@ void writeJsonToBuffer(const T& obj, std::ostream& os) {
 /// @tparam T 変換対象の型。
 /// @param obj 変換するオブジェクト。
 /// @return JSON形式の文字列。
-export template <HasJsonFields T>
+export template <HasSerializer T>
 std::string getJsonContent(const T& obj) {
     std::ostringstream oss;
     writeJsonToBuffer(obj, oss);
@@ -57,7 +57,7 @@ std::string getJsonContent(const T& obj) {
 /// @tparam T 変換対象の型。
 /// @param obj 変換するオブジェクト。
 /// @param filename 出力先のファイル名。
-export template <HasJsonFields T>
+export template <HasSerializer T>
 void writeJsonFile(const T& obj, const std::string& filename) {
     std::ofstream ofs(filename, std::ios::out | std::ios::trunc);
     if (!ofs.is_open()) {
@@ -73,13 +73,13 @@ void writeJsonFile(const T& obj, const std::string& filename) {
 }
 
 /// @brief オブジェクトをJSONから読み込む（startObject/endObject含む）。
-/// @tparam T HasJsonFieldsを実装している型。
+/// @tparam T HasSerializerを実装している型。
 /// @param parser 読み取り元のJsonParser互換オブジェクト。
 /// @param obj 読み込み先のオブジェクト。
 /// @note トップレベルのJSON読み込み用のヘルパー関数。
-export template <HasJsonFields T>
+export template <HasSerializer T>
 void readJsonObject(JsonParser& parser, T& obj) {
-    auto& fields = obj.jsonFields();
+    auto& fields = obj.serializer();
     // Delegate full object parsing (including defaults and required checks)
     parser.startObject();
     fields.readFields(parser, &obj);
@@ -91,7 +91,7 @@ void readJsonObject(JsonParser& parser, T& obj) {
 /// @param buffer 入力バッファ（ReadingAheadBuffer用の先読み領域を含む容量が必要）。
 /// @param out 読み込み先のオブジェクト。
 /// @param unknownKeysOut 未知キーの収集先。
-template <HasJsonFields T>
+template <HasSerializer T>
 void readJsonFromBuffer(std::string&& buffer, T& out,
     std::vector<std::string>& unknownKeysOut) {
     ReadingAheadBuffer inputSource(std::move(buffer), aheadSize);
@@ -106,7 +106,7 @@ void readJsonFromBuffer(std::string&& buffer, T& out,
     unknownKeysOut = std::move(parser.getUnknownKeys());
 }
 
-template <HasJsonFields T>
+template <HasSerializer T>
 void readJsonImpl(std::istream& inputStream, T& out,
     std::vector<std::string>& unknownKeysOut) {
     // ストリームから文字列に読み込み
@@ -125,7 +125,7 @@ void readJsonImpl(std::istream& inputStream, T& out,
 }
 
 // 未知キーの収集先を受け取るオーバーロード（先に定義）
-export template <HasJsonFields T>
+export template <HasSerializer T>
 void readJsonString(const std::string& jsonText, T& out,
     std::vector<std::string>& unknownKeysOut) {
     std::istringstream stream(jsonText);
@@ -136,7 +136,7 @@ void readJsonString(const std::string& jsonText, T& out,
 /// @tparam T 読み込み対象の型。
 /// @param json JSON形式の文字列。
 /// @param out 読み込み先のオブジェクト。
-export template <HasJsonFields T>
+export template <HasSerializer T>
 void readJsonString(const std::string& jsonText, T& out) {
     std::vector<std::string> unknownKeysOut;
     readJsonString(jsonText, out, unknownKeysOut);
@@ -149,7 +149,7 @@ void readJsonString(const std::string& jsonText, T& out) {
 /// @param out 読み込み先のオブジェクト。
 /// @param fileSize ファイルサイズ。
 /// @param unknownKeysOut 未知キーの収集先。
-template <HasJsonFields T>
+template <HasSerializer T>
 void readJsonFileSequentialImpl(std::ifstream& ifs, const std::string& filename, T& out,
     std::streamsize fileSize, std::vector<std::string>& unknownKeysOut) {
     // どうしてこの実装にしたか：ファイルを一括読み込みしてからトークン化する方が、
@@ -174,7 +174,7 @@ void readJsonFileSequentialImpl(std::ifstream& ifs, const std::string& filename,
 /// @param out 読み込み先のオブジェクト。
 /// @param fileSize ファイルサイズ。
 /// @param unknownKeysOut 未知キーの収集先。
-export template <HasJsonFields T>
+export template <HasSerializer T>
 void readJsonFileSequentialCore(const std::string& filename, T& out, std::streamsize fileSize,
     std::vector<std::string>& unknownKeysOut) {
     std::ifstream ifs(filename, std::ios::binary);
@@ -195,7 +195,7 @@ void readJsonFileSequentialCore(const std::string& filename, T& out, std::stream
 /// @param filename 入力元のファイル名。
 /// @param out 読み込み先のオブジェクト。
 /// @param unknownKeysOut 未知キーの収集先。
-export template <HasJsonFields T>
+export template <HasSerializer T>
 void readJsonFileSequential(const std::string& filename, T& out,
     std::vector<std::string>& unknownKeysOut) {
     readJsonFileSequentialCore(filename, out,
@@ -206,7 +206,7 @@ void readJsonFileSequential(const std::string& filename, T& out,
 /// @tparam T 読み込み対象の型。
 /// @param filename 入力元のファイル名。
 /// @param out 読み込み先のオブジェクト。
-export template <HasJsonFields T>
+export template <HasSerializer T>
 void readJsonFileSequential(const std::string& filename, T& out) {
     std::vector<std::string> unknownKeysOut;
     readJsonFileSequential(filename, out, unknownKeysOut);
@@ -218,7 +218,7 @@ void readJsonFileSequential(const std::string& filename, T& out) {
 /// @param filename エラーメッセージ用のファイル名。
 /// @param out 読み込み先のオブジェクト。
 /// @param unknownKeysOut 未知キーの収集先。
-template <HasJsonFields T>
+template <HasSerializer T>
 void readJsonFileParallelImpl(std::ifstream& ifs, const std::string& filename, T& out,
     std::vector<std::string>& unknownKeysOut) {
     ParallelInputStreamSource inputSource(ifs);
@@ -267,7 +267,7 @@ void readJsonFileParallelImpl(std::ifstream& ifs, const std::string& filename, T
 /// @param out 読み込み先のオブジェクト。
 /// @param unknownKeysOut 未知キーの収集先。
 /// @note この関数は常に並列処理を行います。小ファイルでも並列化のオーバーヘッドが発生します。
-export template <HasJsonFields T>
+export template <HasSerializer T>
 void readJsonFileParallel(const std::string& filename, T& out,
     std::vector<std::string>& unknownKeysOut) {
     std::ifstream ifs(filename, std::ios::binary);
@@ -281,7 +281,7 @@ void readJsonFileParallel(const std::string& filename, T& out,
 /// @tparam T 読み込み対象の型。
 /// @param filename 入力元のファイル名。
 /// @param out 読み込み先のオブジェクト。
-export template <HasJsonFields T>
+export template <HasSerializer T>
 void readJsonFileParallel(const std::string& filename, T& out) {
     std::vector<std::string> unknownKeysOut;
     readJsonFileParallel(filename, out, unknownKeysOut);
@@ -293,7 +293,7 @@ void readJsonFileParallel(const std::string& filename, T& out) {
 /// @param out 読み込み先のオブジェクト。
 /// @param unknownKeysOut 未知キーの収集先。
 /// @note 小ファイル（10KB未満）では逐次処理、大ファイルでは並列処理を自動選択します。
-export template <HasJsonFields T>
+export template <HasSerializer T>
 void readJsonFile(const std::string& filename, T& out,
     std::vector<std::string>& unknownKeysOut) {
     std::ifstream ifs(filename, std::ios::binary);
@@ -321,7 +321,7 @@ void readJsonFile(const std::string& filename, T& out,
 /// @tparam T 読み込み対象の型。
 /// @param filename 入力元のファイル名。
 /// @param out 読み込み先のオブジェクト。
-export template <HasJsonFields T>
+export template <HasSerializer T>
 void readJsonFile(const std::string& filename, T& out) {
     std::vector<std::string> unknownKeysOut;
     readJsonFile(filename, out, unknownKeysOut);
