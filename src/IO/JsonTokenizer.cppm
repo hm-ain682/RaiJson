@@ -42,7 +42,7 @@ concept InputSource = requires(T& t, const T& ct, std::size_t offset, std::size_
 
 // @brief トークン管理型が満たすべきインターフェース
 template <typename T>
-concept TokenManager = requires(T& t, JsonToken&& token) {
+concept IsTokenManager = requires(T& t, JsonToken&& token) {
     // トークンを追加。tokenはrvalue referenceだが、
     // 名前付き変数なのでstd::move()でrvalueに変換する必要がある
     { t.pushToken(std::move(token)) } -> std::same_as<void>;
@@ -75,7 +75,7 @@ public:
 
 // ******************************************************************************** JsonTokenizer
 // @brief JSON5トークナイザー（入力文字列からトークン列を生成）
-template <InputSource Input, TokenManager TokMgr>
+template <InputSource Input, IsTokenManager TokMgr>
 class JsonTokenizer {
     // ******************************************************************************** 空白文字とコメントのスキップ
 private:
