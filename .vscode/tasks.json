@@ -10,7 +10,9 @@
       ],
       "group": "build",
       "presentation": {
+        "echo": true,
         "reveal": "always",
+        "focus": false,
         "panel": "shared"
       },
       "problemMatcher": []
@@ -29,7 +31,9 @@
         "isDefault": true
       },
       "presentation": {
+        "echo": true,
         "reveal": "always",
+        "focus": false,
         "panel": "shared"
       },
       "problemMatcher": ["$msCompile"]
@@ -48,7 +52,9 @@
         "kind": "build",
       },
       "presentation": {
+        "echo": true,
         "reveal": "always",
+        "focus": false,
         "panel": "shared"
       },
       "problemMatcher": ["$msCompile"]
@@ -63,7 +69,9 @@
       ],
       "group": "test",
       "presentation": {
+        "echo": true,
         "reveal": "always",
+        "focus": false,
         "panel": "shared"
       },
       "problemMatcher": []
