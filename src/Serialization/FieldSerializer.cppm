@@ -115,8 +115,6 @@ struct InitialAlwaysFieldOmitBehavior {
 /// @tparam Value 値型
 export template <typename Value>
 struct InitialMatchFieldOmitBehavior {
-    static_assert(IsDefaultMatchFieldOmitBehaviorAllowed<Value>,
-        "InitialMatchFieldOmitBehavior requires copyable Value");
     static_assert(std::equality_comparable<Value>,
         "InitialMatchFieldOmitBehavior requires equality comparable Value");
 
