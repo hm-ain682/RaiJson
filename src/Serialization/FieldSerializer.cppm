@@ -52,10 +52,10 @@ struct MemberPointerTraits<ValueType OwnerType::*> {
 export template <typename MemberPtr>
 using MemberPointerValueType = typename MemberPointerTraits<MemberPtr>::Value;
 
-/// @brief SingleValueFieldOmitBehavior を利用できるか判定するconcept。
+/// @brief DefaultMatchFieldOmitBehavior を利用できるか判定するconcept。
 /// @tparam Value 対象型
 template <typename Value>
-concept IsSingleValueBehaviorAllowed = std::is_copy_constructible_v<Value>
+concept IsDefaultMatchFieldOmitBehaviorAllowed = std::is_copy_constructible_v<Value>
     && std::is_copy_assignable_v<Value>
     && std::equality_comparable<Value>
     && (!IsContainer<Value>
@@ -66,11 +66,11 @@ concept IsSingleValueBehaviorAllowed = std::is_copy_constructible_v<Value>
 /// @brief 読み込み時省略では既定値を設定し、書き出し時既定値と一致するならスキップする省略時挙動。
 /// @tparam Value 値型
 export template <typename Value>
-struct SingleValueFieldOmitBehavior {
-    static_assert(IsSingleValueBehaviorAllowed<Value>,
-        "SingleValueFieldOmitBehavior requires copyable Value");
+struct DefaultMatchFieldOmitBehavior {
+    static_assert(IsDefaultMatchFieldOmitBehaviorAllowed<Value>,
+        "DefaultMatchFieldOmitBehavior requires copyable Value");
     static_assert(std::equality_comparable<Value>,
-        "SingleValueFieldOmitBehavior requires equality comparable Value");
+        "DefaultMatchFieldOmitBehavior requires equality comparable Value");
 
     /// @brief 値が省略条件に一致するかを返す。
     /// @param value チェックする値
@@ -93,7 +93,7 @@ struct SingleValueFieldOmitBehavior {
 /// @brief 省略時挙動（既定値も省略条件も持たない）。
 /// @tparam Value 値型
 export template <typename Value>
-struct NoDefaultFieldOmitBehavior {
+struct InitialAlwaysFieldOmitBehavior {
     /// @brief 値が省略条件に一致するかを返す。
     /// @param value チェックする値
     /// @return 省略すべきなら true
@@ -109,6 +109,33 @@ struct NoDefaultFieldOmitBehavior {
         (void)outValue;
         (void)key;
     }
+};
+
+/// @brief 読み込み時省略では何も行わず、書き出し時既定値と一致するならスキップする省略時挙動。
+/// @tparam Value 値型
+export template <typename Value>
+struct InitialMatchFieldOmitBehavior {
+    static_assert(IsDefaultMatchFieldOmitBehaviorAllowed<Value>,
+        "InitialMatchFieldOmitBehavior requires copyable Value");
+    static_assert(std::equality_comparable<Value>,
+        "InitialMatchFieldOmitBehavior requires equality comparable Value");
+
+    /// @brief 値が省略条件に一致するかを返す。
+    /// @param value チェックする値
+    /// @return 省略すべきなら true
+    bool shouldSkipWrite(const Value& value) const {
+        return value == defaultValue;
+    }
+
+    /// @brief 欠落時の挙動を適用する。
+    /// @param outValue 欠落時に代入する対象
+    /// @param key 対象キー名
+    void applyMissing(Value& outValue, std::string_view key) const {
+        (void)outValue;
+        (void)key;
+    }
+
+    Value defaultValue{};  ///< 書き込み時の省略判定に使う値
 };
 
 /// @brief 読み込み時省略では例外を送出し、常時書き出しす省略時挙動。
@@ -140,7 +167,7 @@ struct RequiredFieldOmitBehavior {
 /// @tparam Behavior 挙動型
 /// @tparam Value 値型
 export template <typename Behavior, typename Value>
-concept IsFieldOmittedBehavior = requires(const Behavior& behavior, const Value& value,
+concept IsFieldOmitBehavior = requires(const Behavior& behavior, const Value& value,
     Value& outValue, std::string_view key) {
     { behavior.shouldSkipWrite(value) } -> std::same_as<bool>;
     { behavior.applyMissing(outValue, key) } -> std::same_as<void>;
@@ -156,8 +183,8 @@ struct FieldSerializer {
     using Value = typename Traits::Value;
     static_assert(IsObjectConverter<Converter, MemberPointerValueType<MemberPtr>>,
         "Converter must satisfy IsObjectConverter for the member value type");
-    static_assert(IsFieldOmittedBehavior<OmittedBehavior, Value>,
-        "OmittedBehavior must satisfy IsFieldOmittedBehavior for the member value type");
+    static_assert(IsFieldOmitBehavior<OmittedBehavior, Value>,
+        "OmittedBehavior must satisfy IsFieldOmitBehavior for the member value type");
 
     /// @brief コンストラクタ（省略時挙動を明示的に指定する版）。
     /// @param memberPtr メンバポインタ
@@ -257,7 +284,7 @@ constexpr auto getDefaultOmittedField(MemberPtr memberPtr, const char* keyName,
     MemberPointerValueType<MemberPtr> defaultValue) {
     using Value = MemberPointerValueType<MemberPtr>;
     const auto& converter = getConverter<Value>();
-    SingleValueFieldOmitBehavior<Value> behavior{ .defaultValue = std::move(defaultValue) };
+    DefaultMatchFieldOmitBehavior<Value> behavior{ .defaultValue = std::move(defaultValue) };
     return getField(memberPtr, keyName, converter, behavior);
 }
 
@@ -269,34 +296,62 @@ constexpr auto getDefaultOmittedField(MemberPtr memberPtr, const char* keyName,
 export template <typename MemberPtr, typename Converter>
 constexpr auto getDefaultOmittedField(MemberPtr memberPtr, const char* keyName,
     MemberPointerValueType<MemberPtr> defaultValue, const Converter& converter) {
-    SingleValueFieldOmitBehavior<MemberPointerValueType<MemberPtr>> behavior
+    DefaultMatchFieldOmitBehavior<MemberPointerValueType<MemberPtr>> behavior
     { .defaultValue = std::move(defaultValue) };
     return getField(memberPtr, keyName, converter, behavior);
 }
 
-/// @brief 読み込み時省略では何も行わず、書き込み時も省略しないFieldSerializerを返す。
+/// @brief 読み込み時省略では何も行わず、書き込み時は既定値と等しい場合に省略するFieldSerializerを返す。
+///        与えられた MemberPtr の値型（以下）に対するコンバータを使用する。
+///        基本型、HasSerializer、HasReadFormat/HasWriteFormat
+/// @param memberPtr メンバポインタ
+/// @param keyName JSONキー名
+/// @param defaultValue 書き込み時の省略判定に使う値
+export template <typename MemberPtr>
+constexpr auto getInitialOmittedField(MemberPtr memberPtr, const char* keyName,
+    MemberPointerValueType<MemberPtr> defaultValue) {
+    using Value = MemberPointerValueType<MemberPtr>;
+    const auto& converter = getConverter<Value>();
+    InitialMatchFieldOmitBehavior<Value> behavior{ .defaultValue = std::move(defaultValue) };
+    return getField(memberPtr, keyName, converter, behavior);
+}
+
+/// @brief 読み込み時省略では何も行わず、書き込み時は既定値と等しい場合に省略するFieldSerializerを返す。
+/// @param memberPtr メンバポインタ
+/// @param keyName JSONキー名
+/// @param defaultValue 書き込み時の省略判定に使う値
+/// @param converter 値型に対応するコンバータ
+export template <typename MemberPtr, typename Converter>
+constexpr auto getInitialOmittedField(MemberPtr memberPtr, const char* keyName,
+    MemberPointerValueType<MemberPtr> defaultValue, const Converter& converter) {
+    InitialMatchFieldOmitBehavior<MemberPointerValueType<MemberPtr>> behavior
+    { .defaultValue = std::move(defaultValue) };
+    return getField(memberPtr, keyName, converter, behavior);
+}
+
+/// @brief 読み込み時省略では何も行わず、書き込み時は省略しないFieldSerializerを返す。
 ///        与えられた MemberPtr の値型（以下）に対するコンバータを使用する。
 ///        基本型、HasSerializer、HasReadFormat/HasWriteFormat
 /// @param memberPtr メンバポインタ
 /// @param keyName JSONキー名
 export template <typename MemberPtr>
-constexpr auto getInitialOmittedField(MemberPtr memberPtr, const char* keyName) {
+constexpr auto getInitialAlwaysField(MemberPtr memberPtr, const char* keyName) {
     using Value = MemberPointerValueType<MemberPtr>;
     const auto& converter = getConverter<Value>();
-    NoDefaultFieldOmitBehavior<Value> behavior{};
+    InitialAlwaysFieldOmitBehavior<Value> behavior{};
     return getField(memberPtr, keyName, converter, behavior);
 }
 
-/// @brief 読み込み時省略では何も行わず、書き込み時も省略しないFieldSerializerを返す。
+/// @brief 読み込み時省略では何も行わず、書き込み時は省略しないFieldSerializerを返す。
 /// @param memberPtr メンバポインタ
 /// @param keyName JSONキー名
 /// @param converter 値型に対応するコンバータ
 export template <typename MemberPtr, typename Converter>
     requires IsObjectConverter<Converter, MemberPointerValueType<MemberPtr>>
-constexpr auto getInitialOmittedField(MemberPtr memberPtr, const char* keyName,
+constexpr auto getInitialAlwaysField(MemberPtr memberPtr, const char* keyName,
     const Converter& converter) {
     using Value = MemberPointerValueType<MemberPtr>;
-    NoDefaultFieldOmitBehavior<Value> behavior{};
+    InitialAlwaysFieldOmitBehavior<Value> behavior{};
     return getField(memberPtr, keyName, converter, behavior);
 }
 

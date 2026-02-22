@@ -204,6 +204,19 @@ struct SkipFieldTest {
     }
 };
 
+struct InitialOmitFieldTest {
+    int a = 1;
+    int b = 7;
+
+    const ObjectSerializer& serializer() const {
+        static const auto fields = getFieldSet(
+            getRequiredField(&InitialOmitFieldTest::a, "a"),
+            getInitialOmittedField(&InitialOmitFieldTest::b, "b", 0)
+        );
+        return fields;
+    }
+};
+
 TEST(JsonPolymorphicTest, ReadSingleCustomKey) {
     Holder original;
     original.item = std::make_unique<POne>();
@@ -254,6 +267,24 @@ TEST(JsonFieldSkipWrite, OmitWhenValueMatches) {
 
     s.b = 5;
     EXPECT_EQ(getJsonContent(s), "{a:1,b:5}");
+}
+
+TEST(JsonInitialFieldDefaults, MissingKeyKeepsInitialValue) {
+    InitialOmitFieldTest obj{};
+    obj.b = 7;
+    readJsonString("{a:10}", obj);
+    EXPECT_EQ(obj.a, 10);
+    EXPECT_EQ(obj.b, 7);
+}
+
+TEST(JsonInitialFieldSkipWrite, OmitWhenValueMatchesDefault) {
+    InitialOmitFieldTest obj{};
+    obj.a = 1;
+    obj.b = 0;
+    EXPECT_EQ(getJsonContent(obj), "{a:1}");
+
+    obj.b = 5;
+    EXPECT_EQ(getJsonContent(obj), "{a:1,b:5}");
 }
 
 // ********************************************************************************
@@ -1027,7 +1058,7 @@ TEST(JsonElementConverterTest, VariantElementConverterDerivedCustomizesString) {
             static const MyElemConv elemConv{};
             static const auto conv = getVariantConverter<Var>(elemConv);
             static const auto fields = getFieldSet(
-                getInitialOmittedField(&Holder::v, "v", conv)
+                getInitialAlwaysField(&Holder::v, "v", conv)
             );
             return fields;
         }

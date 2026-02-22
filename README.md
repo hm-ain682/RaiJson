@@ -5,7 +5,7 @@ fast, dependency-free parsing and convenient, declarative mappings between C++ t
 
 ## Key features ✅
 - Zero-dependency JSON5 tokenizer, JsonParser, and writer
-- Declarative field descriptors: `getRequiredField`, `getDefaultOmittedField`, `getInitialOmittedField`
+- Declarative field descriptors: `getRequiredField`, `getDefaultOmittedField`, `getInitialOmittedField`, `getInitialAlwaysField`
 - Enum and polymorphic converters: `getEnumConverter`, `getPolymorphicConverter`, `getPolymorphicArrayConverter`
 - Polymorphic object support (single object and arrays) using type tags
 - Small, fixed-capacity sorted-hash array map for fast key lookup without heap allocations
