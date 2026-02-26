@@ -11,6 +11,7 @@ module;
 #include <stdexcept>
 #include <mutex>
 #include <future>
+#include <typeindex>
 
 export module rai.serialization.json_io;
 
@@ -30,34 +31,38 @@ namespace rai::serialization {
 static constexpr std::size_t smallFileThreshold = 10 * 1024; //< 小ファイルとみなす閾値（byte）
 static constexpr std::size_t aheadSize = 8;        //< 先読み8byte
 
-/// @brief 指定型に対してObjectSerializerを提供できるか判定するconcept。
-/// @tparam Provider シリアライザー提供者の型。
-/// @tparam ObjectType 対象オブジェクト型。
-export template <typename Provider, typename ObjectType>
-concept IsSerializationProvider = requires(const Provider& provider,
-    const ObjectType& constObject, ObjectType& object,
-    FormatWriter& writer, FormatReader& reader) {
-    {
-        provider.getObjectSerializer(constObject)
-            .writeFields(writer, static_cast<const void*>(&constObject))
-    } -> std::same_as<void>;
-    {
-        provider.getObjectSerializer(constObject)
-            .readFields(reader, static_cast<void*>(&object))
-    } -> std::same_as<void>;
-};
+/// @brief Providerと対象オブジェクトからObjectSerializerを解決する。
+/// @tparam T 対象オブジェクト型。
+/// @param provider ObjectSerializerを提供するProvider。
+/// @param object 対象オブジェクト。
+/// @return 解決できたObjectSerializer。
+/// @throws std::runtime_error serializerを解決できない場合。
+template <typename T>
+const ObjectSerializer& resolveObjectSerializer(
+    const SerializationProvider& provider, const T& object) {
+    const ObjectSerializer* objectSerializer = provider.getSerializerFromObject(object);
+    if (objectSerializer != nullptr) {
+        return *objectSerializer;
+    }
+    if constexpr (HasSerializer<T>) {
+        return object.serializer();
+    }
+    throw std::runtime_error("resolveObjectSerializer: serializer is not provided for type");
+}
 
 /// @brief 既定の永続化提供クラス。
 ///        永続化対象オブジェクトの各型にあるserializer()を利用してObjectSerializerを提供する。
-export class SerializerObjectSerializationProvider {
+export class SerializerObjectSerializationProvider : public SerializationProvider {
 public:
-    /// @brief 指定型に対応するObjectSerializerを返す。
-    /// @tparam ObjectType 対象オブジェクト型。
-    /// @param object 対象オブジェクト。
-    /// @return 指定型に対応するObjectSerializer。
-    template <HasSerializer ObjectType>
-    const auto& getObjectSerializer(const ObjectType& object) const {
-        return object.serializer();
+    /// @brief 対象オブジェクト情報からObjectSerializerを解決する。
+    /// @param objectType 対象オブジェクトの型情報。
+    /// @param objectAddress 対象オブジェクトのアドレス。
+    /// @return 解決できたObjectSerializer。未対応の場合はnullptr。
+    const ObjectSerializer* getSerializer(
+        std::type_index objectType, const void* objectAddress) const override {
+        static_cast<void>(objectType);
+        static_cast<void>(objectAddress);
+        return nullptr;
     }
 };
 
@@ -67,13 +72,12 @@ public:
 /// @param obj 変換するオブジェクト。
 /// @param os 出力先のストリーム。
 /// @param provider 型に対応するObjectSerializer提供者。
-export template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
-void writeJsonToBuffer(const T& obj, std::ostream& os, const Provider& provider) {
+export template <typename T>
+void writeJsonToBuffer(const T& obj, std::ostream& os, const SerializationProvider& provider) {
     JsonWriter writer(os);
-    const auto& objectSerializer = provider.getObjectSerializer(obj);
+    const ObjectSerializer& objectSerializer = resolveObjectSerializer(provider, obj);
     writer.startObject();
-    objectSerializer.writeFields(writer, static_cast<const void*>(&obj));
+    objectSerializer.writeFields(writer, static_cast<const void*>(&obj), provider);
     writer.endObject();
 }
 
@@ -92,9 +96,8 @@ void writeJsonToBuffer(const T& obj, std::ostream& os) {
 /// @param obj 変換するオブジェクト。
 /// @param provider 型に対応するObjectSerializer提供者。
 /// @return JSON形式の文字列。
-export template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
-std::string getJsonContent(const T& obj, const Provider& provider) {
+export template <typename T>
+std::string getJsonContent(const T& obj, const SerializationProvider& provider) {
     std::ostringstream oss;
     writeJsonToBuffer(obj, oss, provider);
     return oss.str();
@@ -115,9 +118,9 @@ std::string getJsonContent(const T& obj) {
 /// @param obj 変換するオブジェクト。
 /// @param filename 出力先のファイル名。
 /// @param provider 型に対応するObjectSerializer提供者。
-export template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
-void writeJsonFile(const T& obj, const std::string& filename, const Provider& provider) {
+export template <typename T>
+void writeJsonFile(
+    const T& obj, const std::string& filename, const SerializationProvider& provider) {
     std::ofstream ofs(filename, std::ios::out | std::ios::trunc);
     if (!ofs.is_open()) {
         throw std::runtime_error("writeJsonToFile: Cannot open file " + filename);
@@ -147,12 +150,11 @@ void writeJsonFile(const T& obj, const std::string& filename) {
 /// @param obj 読み込み先のオブジェクト。
 /// @param provider 型に対応するObjectSerializer提供者。
 /// @note トップレベルのJSON読み込み用のヘルパー関数。
-export template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
-void readJsonObject(JsonParser& parser, T& obj, const Provider& provider) {
-    const auto& objectSerializer = provider.getObjectSerializer(obj);
+export template <typename T>
+void readJsonObject(JsonParser& parser, T& obj, const SerializationProvider& provider) {
+    const ObjectSerializer& objectSerializer = resolveObjectSerializer(provider, obj);
     parser.startObject();
-    objectSerializer.readFields(parser, static_cast<void*>(&obj));
+    objectSerializer.readFields(parser, static_cast<void*>(&obj), provider);
     parser.endObject();
 }
 
@@ -173,10 +175,9 @@ void readJsonObject(JsonParser& parser, T& obj) {
 /// @param out 読み込み先のオブジェクト。
 /// @param unknownKeysOut 未知キーの収集先。
 /// @param jsonFormat オブジェクトのJSON形式を定義するオブジェクト。
-template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
+template <typename T>
 void readJsonFromBuffer(std::string&& buffer, T& out,
-    std::vector<std::string>& unknownKeysOut, const Provider& provider) {
+    std::vector<std::string>& unknownKeysOut, const SerializationProvider& provider) {
     ReadingAheadBuffer inputSource(std::move(buffer), aheadSize);
     TokenManager tokenManager;
     StdoutMessageOutput warningOutput;
@@ -189,10 +190,9 @@ void readJsonFromBuffer(std::string&& buffer, T& out,
     unknownKeysOut = std::move(parser.getUnknownKeys());
 }
 
-template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
+template <typename T>
 void readJsonImpl(std::istream& inputStream, T& out,
-    std::vector<std::string>& unknownKeysOut, const Provider& provider) {
+    std::vector<std::string>& unknownKeysOut, const SerializationProvider& provider) {
     // ストリームから文字列に読み込み
     std::ostringstream oss;
     oss << inputStream.rdbuf();
@@ -209,10 +209,9 @@ void readJsonImpl(std::istream& inputStream, T& out,
 }
 
 // 未知キーの収集先を受け取るオーバーロード（先に定義）
-export template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
+export template <typename T>
 void readJsonString(const std::string& jsonText, T& out,
-    std::vector<std::string>& unknownKeysOut, const Provider& provider) {
+    std::vector<std::string>& unknownKeysOut, const SerializationProvider& provider) {
     std::istringstream stream(jsonText);
     readJsonImpl(stream, out, unknownKeysOut, provider);
 }
@@ -230,9 +229,8 @@ void readJsonString(const std::string& jsonText, T& out,
 /// @param json JSON形式の文字列。
 /// @param out 読み込み先のオブジェクト。
 /// @param jsonFormat オブジェクトのJSON形式を定義するオブジェクト。
-export template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
-void readJsonString(const std::string& jsonText, T& out, const Provider& provider) {
+export template <typename T>
+void readJsonString(const std::string& jsonText, T& out, const SerializationProvider& provider) {
     std::vector<std::string> unknownKeysOut;
     readJsonString(jsonText, out, unknownKeysOut, provider);
 }
@@ -255,10 +253,10 @@ void readJsonString(const std::string& jsonText, T& out) {
 /// @param fileSize ファイルサイズ。
 /// @param unknownKeysOut 未知キーの収集先。
 /// @param jsonFormat オブジェクトのJSON形式を定義するオブジェクト。
-template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
+template <typename T>
 void readJsonFileSequentialImpl(std::ifstream& ifs, const std::string& filename, T& out,
-    std::streamsize fileSize, std::vector<std::string>& unknownKeysOut, const Provider& provider) {
+    std::streamsize fileSize, std::vector<std::string>& unknownKeysOut,
+    const SerializationProvider& provider) {
     // どうしてこの実装にしたか：ファイルを一括読み込みしてからトークン化する方が、
     // 小〜中規模ファイルではスレッド同期オーバーヘッドを回避できるため高速
     std::string buffer;
@@ -283,10 +281,9 @@ void readJsonFileSequentialImpl(std::ifstream& ifs, const std::string& filename,
 /// @param fileSize ファイルサイズ。
 /// @param unknownKeysOut 未知キーの収集先。
 /// @param jsonFormat オブジェクトのJSON形式を定義するオブジェクト。
-export template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
+export template <typename T>
 void readJsonFileSequentialCore(const std::string& filename, T& out, std::streamsize fileSize,
-    std::vector<std::string>& unknownKeysOut, const Provider& provider) {
+    std::vector<std::string>& unknownKeysOut, const SerializationProvider& provider) {
     std::ifstream ifs(filename, std::ios::binary);
     if (!ifs.is_open()) {
         throw std::runtime_error("readJsonFile: Cannot open file " + filename);
@@ -333,10 +330,9 @@ void readJsonFileSequential(const std::string& filename, T& out,
 /// @param out 読み込み先のオブジェクト。
 /// @param unknownKeysOut 未知キーの収集先。
 /// @param jsonFormat オブジェクトのJSON形式を定義するオブジェクト。
-export template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
+export template <typename T>
 void readJsonFileSequential(const std::string& filename, T& out,
-    std::vector<std::string>& unknownKeysOut, const Provider& provider) {
+    std::vector<std::string>& unknownKeysOut, const SerializationProvider& provider) {
     readJsonFileSequentialCore(
         filename, out, std::filesystem::file_size(filename), unknownKeysOut,
         provider);
@@ -358,9 +354,9 @@ void readJsonFileSequential(const std::string& filename, T& out) {
 /// @param filename 入力元のファイル名。
 /// @param out 読み込み先のオブジェクト。
 /// @param jsonFormat オブジェクトのJSON形式を定義するオブジェクト。
-export template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
-void readJsonFileSequential(const std::string& filename, T& out, const Provider& provider) {
+export template <typename T>
+void readJsonFileSequential(
+    const std::string& filename, T& out, const SerializationProvider& provider) {
     std::vector<std::string> unknownKeysOut;
     readJsonFileSequential(filename, out, unknownKeysOut, provider);
 }
@@ -373,10 +369,9 @@ void readJsonFileSequential(const std::string& filename, T& out, const Provider&
 /// @param out 読み込み先のオブジェクト。
 /// @param unknownKeysOut 未知キーの収集先。
 /// @param jsonFormat オブジェクトのJSON形式を定義するオブジェクト。
-template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
+template <typename T>
 void readJsonFileParallelImpl(std::ifstream& ifs, const std::string& filename, T& out,
-    std::vector<std::string>& unknownKeysOut, const Provider& provider) {
+    std::vector<std::string>& unknownKeysOut, const SerializationProvider& provider) {
     ParallelInputStreamSource inputSource(ifs);
     TokenManager tokenManager;
     StdoutMessageOutput warningOutput;
@@ -425,10 +420,9 @@ void readJsonFileParallelImpl(std::ifstream& ifs, const std::string& filename, T
 /// @param unknownKeysOut 未知キーの収集先。
 /// @note この関数は常に並列処理を行います。小ファイルでも並列化のオーバーヘッドが発生します。
 /// @param jsonFormat オブジェクトのJSON形式を定義するオブジェクト。
-export template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
+export template <typename T>
 void readJsonFileParallel(const std::string& filename, T& out,
-    std::vector<std::string>& unknownKeysOut, const Provider& provider) {
+    std::vector<std::string>& unknownKeysOut, const SerializationProvider& provider) {
     std::ifstream ifs(filename, std::ios::binary);
     if (!ifs.is_open()) {
         throw std::runtime_error("readJsonFile: Cannot open file " + filename);
@@ -464,9 +458,9 @@ void readJsonFileParallel(const std::string& filename, T& out) {
 /// @param filename 入力元のファイル名。
 /// @param out 読み込み先のオブジェクト。
 /// @param jsonFormat オブジェクトのJSON形式を定義するオブジェクト。
-export template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
-void readJsonFileParallel(const std::string& filename, T& out, const Provider& provider) {
+export template <typename T>
+void readJsonFileParallel(
+    const std::string& filename, T& out, const SerializationProvider& provider) {
     std::vector<std::string> unknownKeysOut;
     readJsonFileParallel(filename, out, unknownKeysOut, provider);
 }
@@ -479,10 +473,9 @@ void readJsonFileParallel(const std::string& filename, T& out, const Provider& p
 /// @param unknownKeysOut 未知キーの収集先。
 /// @note 小ファイル（10KB未満）では逐次処理、大ファイルでは並列処理を自動選択します。
 /// @param jsonFormat オブジェクトのJSON形式を定義するオブジェクト。
-export template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
+export template <typename T>
 void readJsonFile(const std::string& filename, T& out,
-    std::vector<std::string>& unknownKeysOut, const Provider& provider) {
+    std::vector<std::string>& unknownKeysOut, const SerializationProvider& provider) {
     std::ifstream ifs(filename, std::ios::binary);
     if (!ifs.is_open()) {
         throw std::runtime_error("readJsonFile: Cannot open file " + filename);
@@ -533,9 +526,8 @@ void readJsonFile(const std::string& filename, T& out) {
 /// @param filename 入力元のファイル名。
 /// @param out 読み込み先のオブジェクト。
 /// @param jsonFormat オブジェクトのJSON形式を定義するオブジェクト。
-export template <typename T, typename Provider>
-    requires IsSerializationProvider<Provider, T>
-void readJsonFile(const std::string& filename, T& out, const Provider& provider) {
+export template <typename T>
+void readJsonFile(const std::string& filename, T& out, const SerializationProvider& provider) {
     std::vector<std::string> unknownKeysOut;
     readJsonFile(filename, out, unknownKeysOut, provider);
 }
