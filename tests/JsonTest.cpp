@@ -1187,7 +1187,7 @@ TEST(JsonElementConverterTest, NestedContainerUsesElementConverter) {
     struct Holder {
         std::vector<std::vector<RWElement>> v;
         const ObjectSerializer& serializer() const {
-            static const JsonFieldsConverter<RWElement> innerElemConv{};
+            static const SerializerConverter<RWElement> innerElemConv{};
             using RWElementVector = std::vector<RWElement>;
             static const auto innerConverter =
                 getContainerConverter<RWElementVector>(innerElemConv);
@@ -1243,7 +1243,7 @@ TEST(JsonElementConverterExplicitTest, ContainerWithExplicitElementConverter) {
     struct Holder {
         std::vector<RWElement> v;
         const ObjectSerializer& serializer() const {
-            static const JsonFieldsConverter<RWElement> elementConverter{};
+            static const SerializerConverter<RWElement> elementConverter{};
             static const auto containerConverter =
                 getContainerConverter<decltype(v)>(elementConverter);
             static const auto fields = getFieldSet(

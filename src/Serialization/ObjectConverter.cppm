@@ -94,9 +94,9 @@ concept HasSerializer = requires(const T& t) { t.serializer(); };
 
 /// @brief serializer を持つ型のコンバータ
 template <typename T>
-struct JsonFieldsConverter {
+struct SerializerConverter {
     static_assert(HasSerializer<T> && std::default_initializable<T>,
-        "JsonFieldsConverter requires T to have serializer() and be default-initializable");
+        "SerializerConverter requires T to have serializer() and be default-initializable");
     using Value = T;
     void write(FormatWriter& writer, const T& obj, const SerializationProvider& provider)
         const {
@@ -178,7 +178,7 @@ constexpr auto& getConverter() {
         return inst;
     }
     else if constexpr (HasSerializer<T>) {
-        static const JsonFieldsConverter<T> inst{};
+        static const SerializerConverter<T> inst{};
         return inst;
     }
     else if constexpr (HasReadFormat<T> && HasWriteFormat<T>) {

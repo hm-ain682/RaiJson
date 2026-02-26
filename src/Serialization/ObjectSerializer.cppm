@@ -56,13 +56,14 @@ public:
         std::type_index objectType, const void* objectAddress) const = 0;
 };
 
-/// @brief 何も解決しない既定のProvider。
-class EmptySerializationProvider : public SerializationProvider {
+/// @brief 既定の永続化提供クラス。
+///        永続化対象オブジェクトの各型にあるserializer()を利用してObjectSerializerを提供する。
+export class SerializerObjectSerializationProvider : public SerializationProvider {
 public:
-    /// @brief 対象オブジェクトに対応するObjectSerializerを解決する。
+    /// @brief 対象オブジェクト情報からObjectSerializerを解決する。
     /// @param objectType 対象オブジェクトの型情報。
     /// @param objectAddress 対象オブジェクトのアドレス。
-    /// @return 常にnullptr。
+    /// @return 解決できたObjectSerializer。未対応の場合はnullptr。
     const ObjectSerializer* getSerializer(
         std::type_index objectType, const void* objectAddress) const override {
         static_cast<void>(objectType);
@@ -70,13 +71,6 @@ public:
         return nullptr;
     }
 };
-
-/// @brief 既定のSerializationProviderを返す。
-/// @return 常に有効な既定Provider。
-export inline const SerializationProvider& getDefaultSerializationProvider() {
-    static const EmptySerializationProvider provider{};
-    return provider;
-}
 
 // ******************************************************************************** 基底インターフェース
 

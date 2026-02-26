@@ -50,22 +50,6 @@ const ObjectSerializer& resolveObjectSerializer(
     throw std::runtime_error("resolveObjectSerializer: serializer is not provided for type");
 }
 
-/// @brief 既定の永続化提供クラス。
-///        永続化対象オブジェクトの各型にあるserializer()を利用してObjectSerializerを提供する。
-export class SerializerObjectSerializationProvider : public SerializationProvider {
-public:
-    /// @brief 対象オブジェクト情報からObjectSerializerを解決する。
-    /// @param objectType 対象オブジェクトの型情報。
-    /// @param objectAddress 対象オブジェクトのアドレス。
-    /// @return 解決できたObjectSerializer。未対応の場合はnullptr。
-    const ObjectSerializer* getSerializer(
-        std::type_index objectType, const void* objectAddress) const override {
-        static_cast<void>(objectType);
-        static_cast<void>(objectAddress);
-        return nullptr;
-    }
-};
-
 /// @brief オブジェクトをJSON形式でストリームに書き出す。
 /// @tparam T 変換対象の型。
 /// @tparam Provider シリアライザー提供者の型。

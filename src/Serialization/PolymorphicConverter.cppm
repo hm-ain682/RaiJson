@@ -81,11 +81,9 @@ using PolymorphicTypeFactory = std::function<Ptr()>;
 /// @return 読み取ったオブジェクトのポインタ。または型キーが見つからない／未知の型名の場合はnullptr。
 export template <typename Ptr>
     requires IsSmartOrRawPointer<Ptr>
-Ptr readPolymorphicInstance(
-    JsonParser& parser,
+Ptr readPolymorphicInstance(JsonParser& parser,
     const collection::MapReference<std::string_view, PolymorphicTypeFactory<Ptr>>& entriesMap,
-    std::string_view jsonKey,
-    const SerializationProvider& provider) {
+    std::string_view jsonKey, const SerializationProvider& provider) {
 
     parser.startObject();
 
@@ -136,11 +134,9 @@ Ptr readPolymorphicInstance(
 /// @brief ポリモーフィックオブジェクト1つ分を読み取るヘルパー関数（null許容版）。
 export template <typename Ptr>
     requires IsSmartOrRawPointer<Ptr>
-Ptr readPolymorphicInstanceOrNull(
-    JsonParser& parser,
+Ptr readPolymorphicInstanceOrNull(JsonParser& parser,
     const collection::MapReference<std::string_view, PolymorphicTypeFactory<Ptr>>& entriesMap,
-    std::string_view jsonKey,
-    const SerializationProvider& provider) {
+    std::string_view jsonKey, const SerializationProvider& provider) {
     // null値の場合はnullptrを返す
     if (parser.nextIsNull()) {
         parser.skipValue();
@@ -183,16 +179,14 @@ struct PolymorphicConverter {
         const Entries& entries, const char* jsonKey = "type", bool allowNull = true)
         : entries_(entries), jsonKey_(jsonKey), allowNull_(allowNull) {}
 
-    Ptr read(JsonParser& parser, const SerializationProvider& provider)
-        const {
+    Ptr read(JsonParser& parser, const SerializationProvider& provider) const {
         if (allowNull_) {
             return readPolymorphicInstanceOrNull<Ptr>(parser, entries_, jsonKey_, provider);
         }
         return readPolymorphicInstance<Ptr>(parser, entries_, jsonKey_, provider);
     }
 
-    void write(JsonWriter& writer, const Ptr& ptr, const SerializationProvider& provider)
-        const {
+    void write(JsonWriter& writer, const Ptr& ptr, const SerializationProvider& provider) const {
         if (!ptr) {
             writer.null();
             return;
