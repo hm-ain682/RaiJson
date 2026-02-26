@@ -107,17 +107,14 @@ Ptr readPolymorphicInstance(JsonParser& parser,
     auto instance = (*factory)();
     using BaseType = typename PointerElementType<Ptr>::type;
 
-    // HasSerializerを持つ型の場合、残りのフィールドを読み取る
-    if constexpr (HasSerializer<BaseType>) {
-        BaseType* raw = std::to_address(instance);
-        const ObjectSerializer* objectSerializer = provider.getSerializerFromObject(*raw);
-        if (objectSerializer != nullptr) {
-            objectSerializer->readFields(parser, raw, provider);
-        }
-        else {
-            auto& fields = instance->serializer();
-            fields.readFields(parser, raw, provider);
-        }
+    BaseType* raw = std::to_address(instance);
+    const ObjectSerializer* objectSerializer = provider.getSerializerFromObject(*raw);
+    if (objectSerializer != nullptr) {
+        objectSerializer->readFields(parser, raw, provider);
+    }
+    else if constexpr (HasSerializer<BaseType>) {
+        auto& fields = instance->serializer();
+        fields.readFields(parser, raw, provider);
     }
     else {
         while (!parser.nextIsEndObject()) {
@@ -195,8 +192,19 @@ struct PolymorphicConverter {
         std::string typeName = getTypeNameFromMap(*ptr, entries_);
         writer.key(jsonKey_);
         writer.writeObject(typeName);
-        auto& fields = ptr->serializer();
-        fields.writeFields(writer, std::to_address(ptr), provider);
+        Element* raw = std::to_address(ptr);
+        const ObjectSerializer* objectSerializer = provider.getSerializerFromObject(*raw);
+        if (objectSerializer != nullptr) {
+            objectSerializer->writeFields(writer, raw, provider);
+        }
+        else if constexpr (HasSerializer<Element>) {
+            auto& fields = ptr->serializer();
+            fields.writeFields(writer, raw, provider);
+        }
+        else {
+            throw std::runtime_error(
+                "PolymorphicConverter::write: serializer is not provided for polymorphic object");
+        }
         writer.endObject();
     }
 

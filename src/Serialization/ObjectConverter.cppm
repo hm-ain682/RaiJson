@@ -92,7 +92,7 @@ struct FundamentalConverter {
 template <typename T>
 concept HasSerializer = requires(const T& t) { t.serializer(); };
 
-/// @brief serializer を持つ型のコンバータ
+/// @brief serializer() を直接使う型のコンバータ。SerializationProvider による動的解決は行わない。
 template <typename T>
 struct SerializerConverter {
     static_assert(HasSerializer<T> && std::default_initializable<T>,
@@ -100,16 +100,41 @@ struct SerializerConverter {
     using Value = T;
     void write(FormatWriter& writer, const T& obj, const SerializationProvider& provider)
         const {
-        const ObjectSerializer* objectSerializer = provider.getSerializerFromObject(obj);
+        static_cast<void>(provider);
         writer.startObject();
-        if (objectSerializer != nullptr) {
-            objectSerializer->writeFields(
-                writer, static_cast<const void*>(&obj), provider);
+        const auto& fields = obj.serializer();
+        fields.writeFields(writer, static_cast<const void*>(&obj), provider);
+        writer.endObject();
+    }
+
+    T read(FormatReader& parser, const SerializationProvider& provider)
+        const {
+        static_cast<void>(provider);
+        T obj{};
+        parser.startObject();
+        auto& fields = obj.serializer();
+        fields.readFields(parser, static_cast<void*>(&obj), provider);
+        parser.endObject();
+        return obj;
+    }
+};
+
+/// @brief SerializationProvider による動的解決を行う型のコンバータ。
+/// @details provider.getSerializerFromObject() で解決できない場合は例外を投げる。
+template <typename T>
+struct SerializationProviderConverter {
+    static_assert(std::default_initializable<T>,
+        "SerializationProviderConverter requires T to be default-initializable");
+    using Value = T;
+    void write(FormatWriter& writer, const T& obj, const SerializationProvider& provider)
+        const {
+        const ObjectSerializer* objectSerializer = provider.getSerializerFromObject(obj);
+        if (objectSerializer == nullptr) {
+            throw std::runtime_error(
+                "SerializationProviderConverter::write: no serializer resolved from provider");
         }
-        else {
-            const auto& fields = obj.serializer();
-            fields.writeFields(writer, static_cast<const void*>(&obj), provider);
-        }
+        writer.startObject();
+        objectSerializer->writeFields(writer, static_cast<const void*>(&obj), provider);
         writer.endObject();
     }
 
@@ -117,18 +142,25 @@ struct SerializerConverter {
         const {
         T obj{};
         const ObjectSerializer* objectSerializer = provider.getSerializerFromObject(obj);
+        if (objectSerializer == nullptr) {
+            throw std::runtime_error(
+                "SerializationProviderConverter::read: no serializer resolved from provider");
+        }
         parser.startObject();
-        if (objectSerializer != nullptr) {
-            objectSerializer->readFields(parser, static_cast<void*>(&obj), provider);
-        }
-        else {
-            auto& fields = obj.serializer();
-            fields.readFields(parser, static_cast<void*>(&obj), provider);
-        }
+        objectSerializer->readFields(parser, static_cast<void*>(&obj), provider);
         parser.endObject();
         return obj;
     }
 };
+
+/// @brief SerializationProviderConverter の既定インスタンスを返す。
+/// @tparam T 変換対象型。
+/// @return 型T向けのSerializationProviderConverterへの参照。
+template <typename T>
+constexpr const auto& getSerializationProviderConverter() {
+    static const SerializationProviderConverter<T> instance{};
+    return instance;
+}
 
 /// @brief readFormatメソッドを持つ型を表すconcept。
 /// @tparam T 型。

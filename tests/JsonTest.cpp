@@ -551,7 +551,8 @@ struct ProviderNestedParent {
 
     const ObjectSerializer& serializer() const {
         static const auto fields = getFieldSet(
-            getRequiredField(&ProviderNestedParent::child, "child"),
+            getRequiredField(&ProviderNestedParent::child, "child",
+                getSerializationProviderConverter<ProviderNestedChild>()),
             getRequiredField(&ProviderNestedParent::flag, "flag")
         );
         return fields;
