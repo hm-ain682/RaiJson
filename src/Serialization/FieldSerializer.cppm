@@ -246,10 +246,10 @@ FieldSerializer(MemberPtr, const char*, std::reference_wrapper<const Converter>,
 /// @param omitBehavior 省略時挙動
 export template <typename MemberPtr, typename Converter, typename OmitBehavior>
 constexpr auto getField(MemberPtr memberPtr, const char* keyName,
-    const Converter& converter, const OmitBehavior& omitBehavior) {
+    const Converter& converter, OmitBehavior omitBehavior) {
     using ConverterBody = std::remove_cvref_t<Converter>;
     return FieldSerializer<MemberPtr, ConverterBody, OmitBehavior>(
-        memberPtr, keyName, std::cref(converter), omitBehavior);
+        memberPtr, keyName, std::cref(converter), std::move(omitBehavior));
 }
 
 /// @brief 項目必須のFieldSerializerを作って返す。
@@ -288,7 +288,7 @@ constexpr auto getDefaultOmittedField(MemberPtr memberPtr, const char* keyName,
     using Value = MemberPointerValueType<MemberPtr>;
     const auto& converter = getConverter<Value>();
     DefaultMatchFieldOmitBehavior<Value> behavior{ .defaultValue = std::move(defaultValue) };
-    return getField(memberPtr, keyName, converter, behavior);
+    return getField(memberPtr, keyName, converter, std::move(behavior));
 }
 
 /// @brief 読み込み時省略では既定値を代入し、書き込み時は既定値と等しい場合に省略するFieldSerializerを返す。
@@ -301,7 +301,7 @@ constexpr auto getDefaultOmittedField(MemberPtr memberPtr, const char* keyName,
     MemberPointerValueType<MemberPtr> defaultValue, const Converter& converter) {
     DefaultMatchFieldOmitBehavior<MemberPointerValueType<MemberPtr>> behavior
     { .defaultValue = std::move(defaultValue) };
-    return getField(memberPtr, keyName, converter, behavior);
+    return getField(memberPtr, keyName, converter, std::move(behavior));
 }
 
 /// @brief 読み込み時省略では何も行わず、書き込み時は既定値と等しい場合に省略するFieldSerializerを返す。
@@ -316,7 +316,7 @@ constexpr auto getInitialOmittedField(MemberPtr memberPtr, const char* keyName,
     using Value = MemberPointerValueType<MemberPtr>;
     const auto& converter = getConverter<Value>();
     InitialMatchFieldOmitBehavior<Value> behavior{ .defaultValue = std::move(defaultValue) };
-    return getField(memberPtr, keyName, converter, behavior);
+    return getField(memberPtr, keyName, converter, std::move(behavior));
 }
 
 /// @brief 読み込み時省略では何も行わず、書き込み時は既定値と等しい場合に省略するFieldSerializerを返す。
@@ -329,7 +329,7 @@ constexpr auto getInitialOmittedField(MemberPtr memberPtr, const char* keyName,
     MemberPointerValueType<MemberPtr> defaultValue, const Converter& converter) {
     InitialMatchFieldOmitBehavior<MemberPointerValueType<MemberPtr>> behavior
     { .defaultValue = std::move(defaultValue) };
-    return getField(memberPtr, keyName, converter, behavior);
+    return getField(memberPtr, keyName, converter, std::move(behavior));
 }
 
 /// @brief 読み込み時省略では何も行わず、書き込み時は省略しないFieldSerializerを返す。
@@ -355,7 +355,7 @@ constexpr auto getInitialAlwaysField(MemberPtr memberPtr, const char* keyName,
     const Converter& converter) {
     using Value = MemberPointerValueType<MemberPtr>;
     InitialAlwaysFieldOmitBehavior<Value> behavior{};
-    return getField(memberPtr, keyName, converter, behavior);
+    return getField(memberPtr, keyName, converter, std::move(behavior));
 }
 
 }  // namespace rai::serialization
