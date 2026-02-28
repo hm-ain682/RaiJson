@@ -46,18 +46,18 @@ concept IsObjectConverter = std::is_class_v<Converter>
         { converter.read(parser, provider) } -> std::same_as<Value>;
     };
 
-/// @brief readFormatメソッドを持つ型を表すconcept。
+/// @brief readメソッドを持つ型を表すconcept。
 /// @tparam T 型。
 template <typename T>
 concept HasReadFormatCore = requires(T& obj, FormatReader& parser) {
-    { obj.readFormat(parser) } -> std::same_as<void>;
+    { obj.read(parser) } -> std::same_as<void>;
 };
 
-/// @brief writeFormatメソッドを持つ型を表すconcept。
+/// @brief writeメソッドを持つ型を表すconcept。
 /// @tparam T 型。
 template <typename T>
 concept HasWriteFormatCore = requires(const T& obj, FormatWriter& writer) {
-    { obj.writeFormat(writer) } -> std::same_as<void>;
+    { obj.write(writer) } -> std::same_as<void>;
 };
 
 // ******************************************************************************** 基本型用変換方法
@@ -160,31 +160,31 @@ constexpr const auto& getSerializationProviderConverter() {
     return instance;
 }
 
-/// @brief readFormatメソッドを持つ型を表すconcept。
+/// @brief readメソッドを持つ型を表すconcept。
 /// @tparam T 型。
 template <typename T>
 concept HasReadFormat = HasReadFormatCore<T>;
 
-/// @brief writeFormatメソッドを持つ型を表すconcept。
+/// @brief writeメソッドを持つ型を表すconcept。
 /// @tparam T 型。
 template <typename T>
 concept HasWriteFormat = HasWriteFormatCore<T>;
 
-/// @brief writeFormat/readFormatを持つ型のコンバータ
+/// @brief write/readを持つ型のコンバータ
 template <typename T>
 struct ReadWriteFormatConverter {
     static_assert(HasReadFormat<T> && HasWriteFormat<T> && std::default_initializable<T>,
-        "ReadWriteFormatConverter requires T to have readFormat/writeFormat and be default-initializable");
+        "ReadWriteFormatConverter requires T to have read/write and be default-initializable");
     using Value = T;
 
     void write(FormatWriter& writer, const T& obj, const SerializationProvider& provider) const {
         static_cast<void>(provider);
-        obj.writeFormat(writer);
+        obj.write(writer);
     }
     T read(FormatReader& parser, const SerializationProvider& provider) const {
         static_cast<void>(provider);
         T out{};
-        out.readFormat(parser);
+        out.read(parser);
         return out;
     }
 };

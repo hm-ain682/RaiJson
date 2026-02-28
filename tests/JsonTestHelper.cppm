@@ -11,7 +11,7 @@ import rai.serialization.object_converter;
 export namespace rai::serialization::test {
 
 /// @brief オブジェクトをJSON形式で書き出し、仕様との一致を確認し、読み込んで元と比較する。
-/// @tparam T テスト対象の型。HasSerializerを満たし、equalメソッドで同値判定できる必要がある。
+/// @tparam T テスト対象の型。
 /// @param original 元のオブジェクト。
 /// @param expectedJson 期待されるJSON文字列。
 /// @note この関数は以下の手順を実行する：

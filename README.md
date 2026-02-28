@@ -310,9 +310,9 @@ struct Drawing {
 > Note: Polymorphic converters accept an optional `allowNull` flag (default: `true`).
 ```
 
-## Custom read/write methods (writeFormat / readFormat) ✍️
-If you prefer full control, implement `void writeFormat(FormatWriter&) const` and
-`void readFormat(FormatReader&)` on your type. These methods are also used automatically
+## Custom read/write methods (write / read) ✍️
+If you prefer full control, implement `void write(FormatWriter&) const` and
+`void read(FormatReader&)` on your type. These methods are also used automatically
 when such types are encountered inside `FieldSerializer`-driven structures.
 
 ```cpp
@@ -323,14 +323,14 @@ struct CustomData {
     int value = 0;
     std::string name;
 
-    void writeFormat(rai::serialization::FormatWriter& writer) const {
+    void write(rai::serialization::FormatWriter& writer) const {
         writer.startObject();
         writer.key("value"); writer.writeObject(value);
         writer.key("name");  writer.writeObject(name);
         writer.endObject();
     }
 
-    void readFormat(rai::serialization::FormatReader& parser) {
+    void read(rai::serialization::FormatReader& parser) {
         parser.startObject();
         while (!parser.nextIsEndObject()) {
             auto key = parser.nextKey();

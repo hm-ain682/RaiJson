@@ -516,22 +516,22 @@ void readJsonFile(const std::string& filename, T& out, const SerializationProvid
     readJsonFile(filename, out, unknownKeysOut, provider);
 }
 
-// writeFormat/readFormatメソッドを持つ型専用のオーバーロード
+// write/readメソッドを持つ型専用のオーバーロード
 
-/// @brief writeFormatメソッドを持つ型をJSON形式で文字列化して返す。
-/// @tparam T writeFormatメソッドを持つ型。
+/// @brief writeメソッドを持つ型をJSON形式で文字列化して返す。
+/// @tparam T writeメソッドを持つ型。
 /// @param obj 変換するオブジェクト。
 /// @return JSON形式の文字列。
 export template <HasWriteFormat T>
 std::string getJsonContent(const T& obj) {
     std::ostringstream oss;
     JsonWriter writer(oss);
-    obj.writeFormat(writer);
+    obj.write(writer);
     return oss.str();
 }
 
-/// @brief readFormatメソッドを持つ型をJSON文字列から読み込む。
-/// @tparam T readFormatメソッドを持つ型。
+/// @brief readメソッドを持つ型をJSON文字列から読み込む。
+/// @tparam T readメソッドを持つ型。
 /// @param jsonText JSON形式の文字列。
 /// @param out 読み込み先のオブジェクト。
 export template <HasReadFormat T>
@@ -547,11 +547,11 @@ void readJsonString(const std::string& jsonText, T& out) {
     tokenizer.tokenize();
 
     JsonParser parser(tokenManager);
-    out.readFormat(parser);
+    out.read(parser);
 }
 
-/// @brief readFormatメソッドを持つ型をJSONファイルから読み込む。
-/// @tparam T readFormatメソッドを持つ型。
+/// @brief readメソッドを持つ型をJSONファイルから読み込む。
+/// @tparam T readメソッドを持つ型。
 /// @param filename 入力元のファイル名。
 /// @param out 読み込み先のオブジェクト。
 export template <HasReadFormat T>
@@ -586,7 +586,7 @@ void readJsonFile(const std::string& filename, T& out) {
     tokenizer.tokenize();
 
     JsonParser parser(tokenManager);
-    out.readFormat(parser);
+    out.read(parser);
 }
 
 }  // namespace rai::serialization

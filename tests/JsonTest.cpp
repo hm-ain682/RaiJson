@@ -788,14 +788,14 @@ TEST(JsonTokenDispatchTest, ReadWriteFalse) {
 // HasReadFormat/HasWriteFormat テスト
 // ********************************************************************************
 
-/// @brief readFormat/writeFormatメソッドを持つテスト用構造体。
+/// @brief read/writeメソッドを持つテスト用構造体。
 struct CustomFormatType {
     int value = 0;
     std::string name;
 
     /// @brief 既定フォーマットへの書き出し。
     /// @param writer FormatWriterの参照。
-    void writeFormat(FormatWriter& writer) const {
+    void write(FormatWriter& writer) const {
         writer.startObject();
         writer.key("value");
         writer.writeObject(value);
@@ -806,7 +806,7 @@ struct CustomFormatType {
 
     /// @brief 既定フォーマットからの読み込み。
     /// @param parser FormatReaderの参照。
-    void readFormat(FormatReader& parser) {
+    void read(FormatReader& parser) {
         parser.startObject();
         while (!parser.nextIsEndObject()) {
             auto key = parser.nextKey();
@@ -866,7 +866,7 @@ TEST(HasReadWriteFormatTest, ReadJsonFile) {
     std::remove(filename.c_str());
 }
 
-/// @brief HasReadFormat版readJsonFileのラウンドトリップテスト。
+/// @brief HasReadFormat/HasWriteFormat版readJsonFileのラウンドトリップテスト。
 TEST(HasReadWriteFormatTest, RoundTrip) {
     CustomFormatType original;
     original.value = 42;
