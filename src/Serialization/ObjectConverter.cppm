@@ -295,6 +295,7 @@ struct EnumConverter {
         "EnumConverter requires MapType to satisfy IsEnumTextMap");
     using Enum = typename MapType::Enum;
     using Value = Enum;
+    
     constexpr explicit EnumConverter(const MapType& map)
         : map_(map) {}
 
@@ -795,9 +796,9 @@ void write(JsonWriter& writer, const Converter& converter, const Value& value) {
 /// @param parser 
 /// @param converter 
 /// @return 変換後のValue
-template <typename Converter, typename Value>
-    requires IsObjectConverter<Converter, Value>
-Value read(JsonParser& parser, const Converter& converter) {
+template <typename Converter>
+    requires IsObjectConverter<Converter, typename Converter::Value>
+typename Converter::Value read(JsonParser& parser, const Converter& converter) {
     return converter.read(parser, SerializerObjectSerializationProvider{});
 }
 
