@@ -86,7 +86,7 @@ public:
     /// @param provider ObjectSerializerを解決するProvider。
     /// @note ポリモーフィック型の書き出し時に使用する。
     virtual void writeFields(FormatWriter& writer, const void* obj,
-        const SerializationProvider& provider) const = 0;
+        const SerializationProvider& provider = SerializerObjectSerializationProvider{}) const = 0;
 
     /// @brief オブジェクトのフィールドを読み込む。
     /// @param parser 読み取り元の FormatReader
@@ -94,7 +94,7 @@ public:
     /// @param provider ObjectSerializerを解決するProvider。
     /// @note startObject/endObject は呼び出し側で処理してください。
     virtual void readFields(FormatReader& parser, void* obj,
-        const SerializationProvider& provider) const = 0;
+        const SerializationProvider& provider = SerializerObjectSerializationProvider{}) const = 0;
 };
 
 // ******************************************************************************** フィールド集合による永続化
