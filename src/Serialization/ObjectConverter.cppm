@@ -60,6 +60,27 @@ concept HasWriteFormatCore = requires(const T& obj, FormatWriter& writer) {
     { obj.write(writer) } -> std::same_as<void>;
 };
 
+/// @brief std::optional 型かどうかを判定する trait。
+/// @tparam T 判定対象の型。
+template <typename T>
+struct IsStdOptionalCore : std::false_type {};
+
+/// @brief std::optional 型かどうかを判定する trait の特殊化。
+/// @tparam T optional の要素型。
+template <typename T>
+struct IsStdOptionalCore<std::optional<T>> : std::true_type {};
+
+/// @brief std::optional 型かどうかを判定する concept。
+/// @tparam T 判定対象の型。
+template <typename T>
+concept IsStdOptional = IsStdOptionalCore<std::remove_cvref_t<T>>::value;
+
+/// @brief 型 `T` に応じた既定のコンバータを返すユーティリティの前方宣言。
+/// @tparam T 変換対象型。
+/// @return 型 `T` に対応する既定コンバータへの参照。
+template <typename T>
+constexpr auto& getConverter();
+
 // ******************************************************************************** 基本型用変換方法
 
 /// @brief プリミティブ型（int, double, bool など）かどうかを判定するconcept。
@@ -189,12 +210,87 @@ struct ReadWriteFormatConverter {
     }
 };
 
+// ******************************************************************************** optional用変換方法
+
+/// @brief std::optional 用のコンバータ。
+/// @tparam T std::optional 型。
+/// @tparam ElementConverter optional の要素型に対するコンバータ。
+template <typename T, typename ElementConverter>
+struct OptionalConverter {
+    static_assert(IsStdOptional<T>, "OptionalConverter requires T to be std::optional<U>");
+
+    using Value = T;
+    using Element = typename T::value_type;
+    using ElementConverterType = std::remove_cvref_t<ElementConverter>;
+    static_assert(IsObjectConverter<ElementConverterType, Element>,
+        "OptionalConverter requires ElementConverter to satisfy IsObjectConverter");
+
+    /// @brief 要素コンバータを指定して構築する。
+    /// @param converter optional の要素型に対するコンバータ。
+    constexpr explicit OptionalConverter(const ElementConverter& converter)
+        : elementConverter_(std::cref(converter)) {}
+
+    /// @brief optional値をJSONへ書き出す。
+    /// @param writer 出力先ライタ。
+    /// @param value 書き出す optional 値。
+    /// @param provider 動的シリアライザー解決に使うプロバイダ。
+    void write(JsonWriter& writer, const T& value, const SerializationProvider& provider) const {
+        if (!value.has_value()) {
+            writer.null();
+            return;
+        }
+        elementConverter_.get().write(writer, *value, provider);
+    }
+
+    /// @brief JSONからoptional値を読み込む。
+    /// @param parser 入力元パーサ。
+    /// @param provider 動的シリアライザー解決に使うプロバイダ。
+    /// @return 読み込んだ optional 値。
+    T read(JsonParser& parser, const SerializationProvider& provider) const {
+        if (parser.nextIsNull()) {
+            parser.skipValue();
+            return std::nullopt;
+        }
+        Element element = elementConverter_.get().read(parser, provider);
+        return T{ std::move(element) };
+    }
+
+private:
+    /// @brief optional の要素型に対するコンバータ参照。
+    std::reference_wrapper<const ElementConverterType> elementConverter_{};
+};
+
+/// @brief std::optional 型に対応する既定の `OptionalConverter` を作成する。
+/// @tparam T std::optional 型。
+/// @return `T` に対応する既定の OptionalConverter 参照。
+template <typename T>
+constexpr auto& getOptionalConverter() {
+    static_assert(IsStdOptional<T>, "getOptionalConverter requires T to be std::optional<U>");
+
+    using Element = typename T::value_type;
+    const auto& elementConverter = getConverter<Element>();
+    using ElementConverterType = std::remove_cvref_t<decltype(elementConverter)>;
+    static const OptionalConverter<T, ElementConverterType> instance{ elementConverter };
+    return instance;
+}
+
+/// @brief 要素コンバータを指定して `OptionalConverter` を作成する。
+/// @tparam T std::optional 型。
+/// @tparam ElementConverter 要素コンバータ型。
+/// @param elementConverter optional の要素型に対するコンバータ。
+/// @return 要素コンバータ指定済みの OptionalConverter。
+template <typename T, typename ElementConverter>
+constexpr auto getOptionalConverter(const ElementConverter& elementConverter) {
+    return OptionalConverter<T, ElementConverter>(elementConverter);
+}
+
 /// @brief 標準でサポートする型を判定する。
 /// @tparam T 判定対象の型
 template <typename T>
 concept IsDefaultConverterSupported
     = IsFundamentalValue<T>
     || std::same_as<T, std::string>
+    || IsStdOptional<T>
     || HasSerializer<T>
     || (HasReadFormat<T> && HasWriteFormat<T>);
 
@@ -205,6 +301,9 @@ constexpr auto& getConverter() {
     if constexpr (IsFundamentalValue<T> || std::same_as<T, std::string>) {
         static const FundamentalConverter<T> inst{};
         return inst;
+    }
+    else if constexpr (IsStdOptional<T>) {
+        return getOptionalConverter<T>();
     }
     else if constexpr (HasSerializer<T>) {
         static const SerializerConverter<T> inst{};

@@ -15,6 +15,7 @@ import rai.collection.sorted_hash_array_map;
 #include <tuple>
 #include <variant>
 #include <array>
+#include <optional>
 #include <set>
 #include <utility>
 #include <typeindex>
@@ -674,6 +675,111 @@ TEST(JsonPointerTest, ReadWriteRoundTrip) {
     original.ptrVec.push_back(std::make_unique<std::string>("third"));
 
     testJsonRoundTrip(original, "{ptr:999,ptrVec:[\"first\",null,\"third\"]}");
+}
+
+// ********************************************************************************
+// テストカテゴリ：optional
+// ********************************************************************************
+
+/// @brief optional の要素型 `int` を文字列として扱うコンバータ。
+struct IntegerStringConverter {
+    using Value = int;
+
+    /// @brief 整数値を文字列として JSON に書き出す。
+    /// @param writer 書き込み先のWriter。
+    /// @param value 書き出す整数値。
+    /// @param provider 動的シリアライザー解決に使うProvider。
+    void write(FormatWriter& writer, const int& value, const SerializationProvider& provider) const {
+        static_cast<void>(provider);
+        writer.writeObject(std::to_string(value));
+    }
+
+    /// @brief JSON 文字列から整数値を読み込む。
+    /// @param parser 読み込み元のParser。
+    /// @param provider 動的シリアライザー解決に使うProvider。
+    /// @return 読み込んだ整数値。
+    int read(FormatReader& parser, const SerializationProvider& provider) const {
+        static_cast<void>(provider);
+        std::string numberText;
+        parser.readTo(numberText);
+        return std::stoi(numberText);
+    }
+};
+
+/// @brief 既定の optional 変換を検証するための構造体。
+struct OptionalHolder {
+    std::optional<int> number;               ///< 数値の optional 値。
+    std::optional<std::string> text;         ///< 文字列の optional 値。
+
+    /// @brief フィールド定義を返す。
+    /// @return フィールド定義。
+    const ObjectSerializer& serializer() const {
+        static const auto fields = getFieldSet(
+            getRequiredField(&OptionalHolder::number, "number"),
+            getRequiredField(&OptionalHolder::text, "text")
+        );
+        return fields;
+    }
+
+    /// @brief 他インスタンスとの同値判定。
+    /// @param other 比較対象。
+    /// @return 同値なら true。
+    bool equals(const OptionalHolder& other) const {
+        return number == other.number && text == other.text;
+    }
+};
+
+/// @brief optional 要素コンバータ指定を検証するための構造体。
+struct OptionalCustomConverterHolder {
+    std::optional<int> numberAsString;   ///< 文字列として入出力する optional 数値。
+
+    /// @brief フィールド定義を返す。
+    /// @return フィールド定義。
+    const ObjectSerializer& serializer() const {
+        static const IntegerStringConverter integerStringConverter{};
+        static const auto optionalIntegerConverter =
+            getOptionalConverter<decltype(numberAsString)>(integerStringConverter);
+        static const auto fields = getFieldSet(
+            getRequiredField(
+                &OptionalCustomConverterHolder::numberAsString,
+                "numberAsString",
+                optionalIntegerConverter)
+        );
+        return fields;
+    }
+
+    /// @brief 他インスタンスとの同値判定。
+    /// @param other 比較対象。
+    /// @return 同値なら true。
+    bool equals(const OptionalCustomConverterHolder& other) const {
+        return numberAsString == other.numberAsString;
+    }
+};
+
+/// @brief optional の既定コンバータで値ありを読み書きできることを確認する。
+TEST(JsonOptionalTest, ReadWriteRoundTripWithValue) {
+    OptionalHolder original;
+    original.number = 123;
+    original.text = "hello";
+    testJsonRoundTrip(original, "{number:123,text:\"hello\"}");
+}
+
+/// @brief optional の既定コンバータで null を読み書きできることを確認する。
+TEST(JsonOptionalTest, ReadWriteRoundTripWithNull) {
+    OptionalHolder original;
+    testJsonRoundTrip(original, "{number:null,text:null}");
+}
+
+/// @brief optional 要素コンバータを指定して変換方法を差し替えられることを確認する。
+TEST(JsonOptionalTest, UsesCustomElementConverter) {
+    OptionalCustomConverterHolder original;
+    original.numberAsString = 42;
+    testJsonRoundTrip(original, "{numberAsString:\"42\"}");
+
+    OptionalCustomConverterHolder out;
+    readJsonString("{numberAsString:\"105\"}", out);
+    ASSERT_TRUE(out.numberAsString.has_value());
+    EXPECT_EQ(*out.numberAsString, 105);
 }
 
 // ********************************************************************************
