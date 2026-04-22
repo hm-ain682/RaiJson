@@ -65,6 +65,19 @@ void writeJsonToBuffer(const T& obj, std::ostream& os, const SerializationProvid
     writer.endObject();
 }
 
+/// @brief Converter を使ってオブジェクトを JSON 形式でストリームに書き出す。
+/// @tparam Converter 変換器型。
+/// @param obj 変換するオブジェクト。
+/// @param os 出力先のストリーム。
+/// @param converter 値変換器。
+export template <typename Converter>
+requires IsObjectConverter<Converter, typename Converter::Value>
+void writeJsonToBuffer(const typename Converter::Value& obj, std::ostream& os,
+    const Converter& converter) {
+    JsonWriter writer(os);
+    converter.write(writer, obj, SerializerObjectSerializationProvider{});
+}
+
 /// @brief オブジェクトをJSON形式でストリームに書き出す。
 /// @tparam T 変換対象の型。
 /// @param obj 変換するオブジェクト。
@@ -94,6 +107,20 @@ std::string getJsonContent(const T& obj, const SerializationProvider& provider) 
 export template <HasSerializer T>
 std::string getJsonContent(const T& obj) {
     return getJsonContent(obj, SerializerObjectSerializationProvider{});
+}
+
+/// @brief Converter を使ってオブジェクトをJSON形式で文字列化して返す。
+/// @tparam Converter 変換器型。
+/// @param obj 変換するオブジェクト。
+/// @param converter 値変換器。
+/// @return JSON形式の文字列。
+export template <typename Converter>
+requires IsObjectConverter<Converter, typename Converter::Value>
+std::string getJsonContent(const typename Converter::Value& obj,
+    const Converter& converter) {
+    std::ostringstream oss;
+    writeJsonToBuffer(obj, oss, converter);
+    return oss.str();
 }
 
 /// @brief オブジェクトをJSONファイルに書き出す。
@@ -127,6 +154,28 @@ void writeJsonFile(const T& obj, const std::string& filename) {
     writeJsonFile(obj, filename, SerializerObjectSerializationProvider{});
 }
 
+/// @brief Converter を使ってオブジェクトを JSON ファイルに書き出す。
+/// @tparam Converter 変換器型。
+/// @param obj 変換するオブジェクト。
+/// @param filename 出力先のファイル名。
+/// @param converter 値変換器。
+export template <typename Converter>
+requires IsObjectConverter<Converter, typename Converter::Value>
+void writeJsonFile(const typename Converter::Value& obj,
+    const std::string& filename, const Converter& converter) {
+    std::ofstream ofs(filename, std::ios::out | std::ios::trunc);
+    if (!ofs.is_open()) {
+        throw std::runtime_error("writeJsonToFile: Cannot open file " + filename);
+    }
+
+    writeJsonToBuffer(obj, ofs, converter);
+
+    ofs.close();
+    if (ofs.bad()) {
+        throw std::runtime_error("writeJsonToFile: Error writing to file " + filename);
+    }
+}
+
 /// @brief オブジェクトをJSONから読み込む（startObject/endObject含む）。
 /// @tparam T 読み込み対象の型。
 /// @tparam Provider シリアライザー提供者の型。
@@ -140,6 +189,18 @@ void readJsonObject(JsonParser& parser, T& obj, const SerializationProvider& pro
     parser.startObject();
     objectSerializer.readFields(parser, static_cast<void*>(&obj), provider);
     parser.endObject();
+}
+
+/// @brief Converter を使ってオブジェクトを JSON から読み込む。
+/// @tparam Converter 変換器型。
+/// @param parser 読み取り元の JsonParser 互換オブジェクト。
+/// @param obj 読み込み先のオブジェクト。
+/// @param converter 値変換器。
+export template <typename Converter>
+requires IsObjectConverter<Converter, typename Converter::Value>
+void readJsonObject(JsonParser& parser, typename Converter::Value& obj,
+    const Converter& converter) {
+    obj = converter.read(parser, SerializerObjectSerializationProvider{});
 }
 
 /// @brief オブジェクトをJSONから読み込む（startObject/endObject含む）。
@@ -205,6 +266,44 @@ export template <HasSerializer T>
 void readJsonString(const std::string& jsonText, T& out,
     std::vector<std::string>& unknownKeysOut) {
     readJsonString(jsonText, out, unknownKeysOut, SerializerObjectSerializationProvider{});
+}
+
+/// @brief Converter を使って JSON 文字列からオブジェクトを読み込む。
+/// @tparam Converter 変換器型。
+/// @param jsonText JSON形式の文字列。
+/// @param out 読み込み先のオブジェクト。
+/// @param unknownKeysOut 未知キーの収集先。
+/// @param converter 値変換器。
+export template <typename Converter>
+requires IsObjectConverter<Converter, typename Converter::Value>
+void readJsonString(const std::string& jsonText, typename Converter::Value& out,
+    std::vector<std::string>& unknownKeysOut, const Converter& converter) {
+    std::string buffer = jsonText;
+    buffer.reserve(buffer.size() + aheadSize);
+
+    ReadingAheadBuffer inputSource(std::move(buffer), aheadSize);
+    TokenManager tokenManager;
+    StdoutMessageOutput warningOutput;
+    JsonTokenizer<ReadingAheadBuffer, TokenManager> tokenizer(
+        inputSource, tokenManager, warningOutput);
+    tokenizer.tokenize();
+
+    JsonParser parser(tokenManager);
+    out = read(parser, converter);
+    unknownKeysOut = std::move(parser.getUnknownKeys());
+}
+
+/// @brief Converter を使って JSON 文字列からオブジェクトを読み込む。
+/// @tparam Converter 変換器型。
+/// @param jsonText JSON形式の文字列。
+/// @param out 読み込み先のオブジェクト。
+/// @param converter 値変換器。
+export template <typename Converter>
+requires IsObjectConverter<Converter, typename Converter::Value>
+void readJsonString(const std::string& jsonText, typename Converter::Value& out,
+    const Converter& converter) {
+    std::vector<std::string> unknownKeysOut;
+    readJsonString(jsonText, out, unknownKeysOut, converter);
 }
 
 /// @brief JSON文字列からオブジェクトを読み込む。
@@ -514,6 +613,40 @@ export template <typename T>
 void readJsonFile(const std::string& filename, T& out, const SerializationProvider& provider) {
     std::vector<std::string> unknownKeysOut;
     readJsonFile(filename, out, unknownKeysOut, provider);
+}
+
+/// @brief Converter を使って JSON ファイルからオブジェクトを読み込む。
+/// @tparam Converter 変換器型。
+/// @param filename 入力元のファイル名。
+/// @param out 読み込み先のオブジェクト。
+/// @param converter 値変換器。
+export template <typename Converter>
+requires IsObjectConverter<Converter, typename Converter::Value>
+void readJsonFile(const std::string& filename, typename Converter::Value& out,
+    const Converter& converter) {
+    std::ifstream ifs(filename, std::ios::binary);
+    if (!ifs.is_open()) {
+        throw std::runtime_error("readJsonFile: Cannot open file " + filename);
+    }
+
+    std::ostringstream oss;
+    oss << ifs.rdbuf();
+    if (ifs.fail() && !ifs.eof()) {
+        throw std::runtime_error("readJsonFile: Failed to read from file " + filename);
+    }
+
+    std::string buffer = oss.str();
+    buffer.reserve(buffer.size() + aheadSize);
+
+    ReadingAheadBuffer inputSource(std::move(buffer), aheadSize);
+    TokenManager tokenManager;
+    StdoutMessageOutput warningOutput;
+    JsonTokenizer<ReadingAheadBuffer, TokenManager> tokenizer(
+        inputSource, tokenManager, warningOutput);
+    tokenizer.tokenize();
+
+    JsonParser parser(tokenManager);
+    out = read(parser, converter);
 }
 
 // write/readメソッドを持つ型専用のオーバーロード

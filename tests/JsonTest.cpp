@@ -980,6 +980,67 @@ TEST(HasReadWriteFormatTest, RoundTrip) {
     testJsonRoundTrip(original, "{value:42,name:\"test\"}");
 }
 
+struct JsonIOConverterTestType {
+    int x = 0;
+    std::string y;
+
+    bool equals(const JsonIOConverterTestType& other) const {
+        return x == other.x && y == other.y;
+    }
+};
+
+struct JsonIOConverterTestTypeConverter {
+    using Value = JsonIOConverterTestType;
+
+    static const ObjectSerializer& fieldSet() {
+        static const auto fields = getFieldSet(
+            getRequiredField(&Value::x, "x"),
+            getRequiredField(&Value::y, "y")
+        );
+        return fields;
+    }
+
+    void write(JsonWriter& writer, const Value& value,
+        const SerializationProvider& provider) const {
+        writer.startObject();
+        fieldSet().writeFields(writer, static_cast<const void*>(&value), provider);
+        writer.endObject();
+    }
+
+    Value read(JsonParser& parser, const SerializationProvider& provider) const {
+        Value out{};
+        parser.startObject();
+        fieldSet().readFields(parser, static_cast<void*>(&out), provider);
+        parser.endObject();
+        return out;
+    }
+};
+
+/// @brief Converter版 getJsonContent/readJsonString のテスト。
+TEST(JsonIOConverterTest, ReadWriteWithConverter) {
+    JsonIOConverterTestType original;
+    original.x = 7;
+    original.y = "converter";
+
+    testJsonRoundTrip(original, "{x:7,y:\"converter\"}", JsonIOConverterTestTypeConverter{});
+}
+
+/// @brief Converter版 readJsonFile のテスト。
+TEST(JsonIOConverterTest, ReadJsonFileWithConverter) {
+    std::string filename = "test_converter.json";
+    {
+        std::ofstream ofs(filename);
+        ofs << "{x:21,y:\"file\"}";
+    }
+
+    JsonIOConverterTestType actual;
+    readJsonFile(filename, actual, JsonIOConverterTestTypeConverter{});
+
+    EXPECT_EQ(actual.x, 21);
+    EXPECT_EQ(actual.y, "file");
+    std::remove(filename.c_str());
+}
+
 // ********************************************************************************
 // テストカテゴリ：JsonContainerField
 // ********************************************************************************
