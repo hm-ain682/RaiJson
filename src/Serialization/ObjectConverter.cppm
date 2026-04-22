@@ -108,6 +108,40 @@ struct FundamentalConverter {
     }
 };
 
+/// @brief 指定されたObjectSerializer派生クラスによる任意型の変換方法。
+/// @tparam T 変換対象型
+/// @tparam Serializer ObjectSerializer派生クラス
+template <typename T, typename Serializer>
+struct ObjectSerializerConverter {
+    using Value = T;
+
+    explicit ObjectSerializerConverter(const Serializer& serializer)
+        : serializer_(serializer) {}
+
+    void write(JsonWriter& writer, const Value& value,
+        const SerializationProvider& provider) const {
+        writer.startObject();
+        serializer_.writeFields(writer, static_cast<const void*>(&value), provider);
+        writer.endObject();
+    }
+
+    Value read(JsonParser& parser, const SerializationProvider& provider) const {
+        Value out{};
+        parser.startObject();
+        serializer_.readFields(parser, static_cast<void*>(&out), provider);
+        parser.endObject();
+        return out;
+    }
+
+private:
+    const Serializer& serializer_;
+};
+
+template <typename T, typename Serializer>
+constexpr auto makeObjectSerializerConverter(const Serializer& serializer) {
+    return ObjectSerializerConverter<T, Serializer>{serializer};
+}
+
 /// @brief serializer()メンバー関数を持つかどうかを判定するconcept。
 /// @tparam T 判定対象の型。
 template <typename T>

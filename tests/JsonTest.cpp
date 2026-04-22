@@ -989,32 +989,13 @@ struct JsonIOConverterTestType {
     }
 };
 
-struct JsonIOConverterTestTypeConverter {
-    using Value = JsonIOConverterTestType;
-
-    static const ObjectSerializer& fieldSet() {
-        static const auto fields = getFieldSet(
-            getRequiredField(&Value::x, "x"),
-            getRequiredField(&Value::y, "y")
-        );
-        return fields;
-    }
-
-    void write(JsonWriter& writer, const Value& value,
-        const SerializationProvider& provider) const {
-        writer.startObject();
-        fieldSet().writeFields(writer, static_cast<const void*>(&value), provider);
-        writer.endObject();
-    }
-
-    Value read(JsonParser& parser, const SerializationProvider& provider) const {
-        Value out{};
-        parser.startObject();
-        fieldSet().readFields(parser, static_cast<void*>(&out), provider);
-        parser.endObject();
-        return out;
-    }
-};
+static auto makeJsonIOConverter() {
+    static const auto fields = getFieldSet(
+        getRequiredField(&JsonIOConverterTestType::x, "x"),
+        getRequiredField(&JsonIOConverterTestType::y, "y")
+    );
+    return makeObjectSerializerConverter<JsonIOConverterTestType>(fields);
+}
 
 /// @brief Converter版 getJsonContent/readJsonString のテスト。
 TEST(JsonIOConverterTest, ReadWriteWithConverter) {
@@ -1022,7 +1003,8 @@ TEST(JsonIOConverterTest, ReadWriteWithConverter) {
     original.x = 7;
     original.y = "converter";
 
-    testJsonRoundTrip(original, "{x:7,y:\"converter\"}", JsonIOConverterTestTypeConverter{});
+    testJsonRoundTrip(original, "{x:7,y:\"converter\"}",
+        makeJsonIOConverter());
 }
 
 /// @brief Converter版 readJsonFile のテスト。
@@ -1034,7 +1016,7 @@ TEST(JsonIOConverterTest, ReadJsonFileWithConverter) {
     }
 
     JsonIOConverterTestType actual;
-    readJsonFile(filename, actual, JsonIOConverterTestTypeConverter{});
+    readJsonFile(filename, actual, makeJsonIOConverter());
 
     EXPECT_EQ(actual.x, 21);
     EXPECT_EQ(actual.y, "file");

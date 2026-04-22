@@ -111,6 +111,36 @@ int main() {
 }
 ```
 
+## Using makeObjectSerializerConverter 🧩
+Use `makeObjectSerializerConverter<T>(serializer)` when you want to serialize a type
+through an explicit `ObjectSerializer` instance rather than relying on the default
+field-based helper converter.
+
+```cpp
+import rai.serialization.field_serializer;
+import rai.serialization.object_converter;
+import rai.serialization.object_serializer;
+import rai.serialization.json_io;
+
+struct Item {
+    int x{};
+    std::string y{};
+};
+
+static const auto itemFields = rai::serialization::getFieldSet(
+    rai::serialization::getRequiredField(&Item::x, "x"),
+    rai::serialization::getRequiredField(&Item::y, "y")
+);
+
+int main() {
+    Item original{7, "converter"};
+    auto converter = rai::serialization::makeObjectSerializerConverter<Item>(itemFields);
+    std::string json = rai::serialization::getJsonContent(original, converter);
+    Item parsed{};
+    rai::serialization::readJsonString(json, parsed, converter);
+}
+```
+
 ## Using SerializationProvider with provider-specific converters 🔌
 When you want field conversion to be resolved only by a custom `SerializationProvider`,
 use `getSerializationProviderConverter<T>()` and pass it to field helpers such as
