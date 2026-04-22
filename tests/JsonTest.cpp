@@ -527,89 +527,61 @@ TEST(JsonNestedTest, ReadWriteRoundTrip) {
     testJsonRoundTrip(original, "{child:{value:42,name:\"test\"},flag:true}");
 }
 
-/// @brief Provider伝播テスト用の子オブジェクト。
-struct ProviderNestedChild {
+/// @brief ネスト型のフィールドにオブジェクトシリアライザーを明示的に指定するテスト用の子オブジェクト。
+struct ExplicitNestedChild {
     int value = 0;
     std::string name;
 
     const ObjectSerializer& serializer() const {
         static const auto fields = getFieldSet(
-            getRequiredField(&ProviderNestedChild::value, "value"),
-            getRequiredField(&ProviderNestedChild::name, "name")
+            getRequiredField(&ExplicitNestedChild::value, "value"),
+            getRequiredField(&ExplicitNestedChild::name, "name")
         );
         return fields;
     }
 
-    bool operator==(const ProviderNestedChild& other) const {
+    bool operator==(const ExplicitNestedChild& other) const {
         return value == other.value && name == other.name;
     }
 };
 
-/// @brief Provider伝播テスト用の親オブジェクト。
-struct ProviderNestedParent {
-    ProviderNestedChild child;
+/// @brief ネスト型のフィールドに明示的なオブジェクトシリアライザーを指定する親オブジェクト。
+struct ExplicitNestedParent {
+    ExplicitNestedChild child;
     bool flag = false;
 
     const ObjectSerializer& serializer() const {
+        static const auto childFields = getFieldSet(
+            getRequiredField(&ExplicitNestedChild::value, "v"),
+            getRequiredField(&ExplicitNestedChild::name, "n")
+        );
+        static const auto childConverter =
+            makeObjectSerializerConverter<ExplicitNestedChild>(childFields);
         static const auto fields = getFieldSet(
-            getRequiredField(&ProviderNestedParent::child, "child",
-                getSerializationProviderConverter<ProviderNestedChild>()),
-            getRequiredField(&ProviderNestedParent::flag, "flag")
+            getRequiredField(&ExplicitNestedParent::child, "child", childConverter),
+            getRequiredField(&ExplicitNestedParent::flag, "flag")
         );
         return fields;
     }
 
-    bool equals(const ProviderNestedParent& other) const {
+    bool equals(const ExplicitNestedParent& other) const {
         return child == other.child && flag == other.flag;
     }
 };
 
-/// @brief ネスト型に対して別シリアライザーを返すProvider。
-class NestedProvider : public SerializationProvider {
-public:
-    const ObjectSerializer& getObjectSerializer(const ProviderNestedParent& object) const {
-        return object.serializer();
-    }
-
-    const ObjectSerializer& getObjectSerializer(const ProviderNestedChild& object) const {
-        static const auto customFields = getFieldSet(
-            getRequiredField(&ProviderNestedChild::value, "v"),
-            getRequiredField(&ProviderNestedChild::name, "n")
-        );
-        static_cast<void>(object);
-        return customFields;
-    }
-
-    const ObjectSerializer* getSerializer(
-        std::type_index objectType, const void* objectAddress) const override {
-        if (objectType == typeid(ProviderNestedChild)) {
-            const auto& object = *static_cast<const ProviderNestedChild*>(objectAddress);
-            return &getObjectSerializer(object);
-        }
-        if (objectType == typeid(ProviderNestedParent)) {
-            const auto& object = *static_cast<const ProviderNestedParent*>(objectAddress);
-            return &getObjectSerializer(object);
-        }
-        return nullptr;
-    }
-};
-
-TEST(JsonNestedProviderTest, WriteUsesProviderForNestedObject) {
-    ProviderNestedParent original;
+TEST(JsonNestedConverterTest, WriteUsesExplicitConverterForNestedObject) {
+    ExplicitNestedParent original;
     original.child.value = 7;
     original.child.name = "child";
     original.flag = true;
 
-    NestedProvider provider;
-    auto json = getJsonContent(original, provider);
-    EXPECT_EQ(json, "{child:{v:7,n:\"child\"},flag:true}");
+    testJsonRoundTrip(original, "{child:{v:7,n:\"child\"},flag:true}");
 }
 
-TEST(JsonNestedProviderTest, ReadUsesProviderForNestedObject) {
-    ProviderNestedParent out;
-    NestedProvider provider;
+TEST(JsonNestedConverterTest, ReadUsesExplicitConverterForNestedObject) {
+    ExplicitNestedParent out;
 
-    readJsonString("{child:{v:15,n:\"nested\"},flag:false}", out, provider);
+    readJsonString("{child:{v:15,n:\"nested\"},flag:false}", out);
 
     EXPECT_EQ(out.child.value, 15);
     EXPECT_EQ(out.child.name, "nested");
@@ -688,18 +660,14 @@ struct IntegerStringConverter {
     /// @brief 整数値を文字列として JSON に書き出す。
     /// @param writer 書き込み先のWriter。
     /// @param value 書き出す整数値。
-    /// @param provider 動的シリアライザー解決に使うProvider。
-    void write(FormatWriter& writer, const int& value, const SerializationProvider& provider) const {
-        static_cast<void>(provider);
+    void write(FormatWriter& writer, const int& value) const {
         writer.writeObject(std::to_string(value));
     }
 
     /// @brief JSON 文字列から整数値を読み込む。
     /// @param parser 読み込み元のParser。
-    /// @param provider 動的シリアライザー解決に使うProvider。
     /// @return 読み込んだ整数値。
-    int read(FormatReader& parser, const SerializationProvider& provider) const {
-        static_cast<void>(provider);
+    int read(FormatReader& parser) const {
         std::string numberText;
         parser.readTo(numberText);
         return std::stoi(numberText);
@@ -835,11 +803,7 @@ struct TokenDispatchHolder {
             /// @brief 値を JSON に書き出す。
             /// @param w 書き込み先。
             /// @param v 書き出す値。
-            /// @param provider シリアライザ解決に利用するProvider。
-            void write(JsonWriter& w, const DispatchValue& v,
-                const SerializationProvider& provider) const
-            {
-                static_cast<void>(provider);
+            void write(JsonWriter& w, const DispatchValue& v) const {
                 std::visit([&w](const auto& val) {
                     w.writeObject(val);
                 }, v.data);
@@ -1272,15 +1236,13 @@ TEST(JsonElementConverterTest, VariantElementConverterDerivedCustomizesString) {
     struct MyElemConv : VariantElementConverter<Var> {
         using VariantElementConverter<Var>::write; // bring base template into scope for other types
 
-        void write(JsonWriter& writer, const Var& value, const SerializationProvider& provider) const {
+        void write(JsonWriter& writer, const Var& value) const {
             std::visit([&](const auto& inner) {
-                this->write(writer, inner, provider);
+                this->write(writer, inner);
             }, value);
         }
 
-        void write(JsonWriter& writer, const std::string& value, const SerializationProvider& provider)
-            const {
-            static_cast<void>(provider);
+        void write(JsonWriter& writer, const std::string& value) const {
             // Prefix strings with marker so we can detect customization
             std::string tmp;
             tmp.reserve(4 + value.size());
@@ -1289,9 +1251,8 @@ TEST(JsonElementConverterTest, VariantElementConverterDerivedCustomizesString) {
             writer.writeObject(tmp);
         }
 
-        void write(JsonWriter& writer, const RWElement& value,
-            const SerializationProvider& provider) const {
-            VariantElementConverter<Var>::template write<RWElement>(writer, value, provider);
+        void write(JsonWriter& writer, const RWElement& value) const {
+            VariantElementConverter<Var>::template write<RWElement>(writer, value);
         }
 
         Var readString(JsonParser& parser) const {

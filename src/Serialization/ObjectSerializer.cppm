@@ -31,47 +31,6 @@ namespace rai::serialization {
 
 export class ObjectSerializer;
 
-/// @brief 型情報とオブジェクト情報からObjectSerializerを解決する抽象インターフェース。
-export class SerializationProvider {
-public:
-    /// @brief デストラクタ。
-    virtual ~SerializationProvider() = default;
-
-    /// @brief 対象オブジェクトに対応するObjectSerializerを解決する。
-    /// @tparam ObjectType 対象オブジェクト型。
-    /// @param object 対象オブジェクト。
-    /// @return 解決できたObjectSerializer。未対応の場合はnullptr。
-    template <typename ObjectType>
-    const ObjectSerializer* getSerializerFromObject(const ObjectType& object) const {
-        using ObjectBody = std::remove_cvref_t<ObjectType>;
-        return getSerializer(
-            std::type_index(typeid(ObjectBody)), static_cast<const void*>(&object));
-    }
-
-    /// @brief 対象オブジェクトに対応するObjectSerializerを解決する。
-    /// @param objectType 対象オブジェクトの型情報。
-    /// @param objectAddress 対象オブジェクトのアドレス。
-    /// @return 解決できたObjectSerializer。未対応の場合はnullptr。
-    virtual const ObjectSerializer* getSerializer(
-        std::type_index objectType, const void* objectAddress) const = 0;
-};
-
-/// @brief 既定の永続化提供クラス。
-///        永続化対象オブジェクトの各型にあるserializer()を利用してObjectSerializerを提供する。
-export class SerializerObjectSerializationProvider : public SerializationProvider {
-public:
-    /// @brief 対象オブジェクト情報からObjectSerializerを解決する。
-    /// @param objectType 対象オブジェクトの型情報。
-    /// @param objectAddress 対象オブジェクトのアドレス。
-    /// @return 解決できたObjectSerializer。未対応の場合はnullptr。
-    const ObjectSerializer* getSerializer(
-        std::type_index objectType, const void* objectAddress) const override {
-        static_cast<void>(objectType);
-        static_cast<void>(objectAddress);
-        return nullptr;
-    }
-};
-
 // ******************************************************************************** 基底インターフェース
 
 /// @brief オブジェクトを永続化するクラス。
@@ -83,18 +42,14 @@ public:
     /// @brief オブジェクトのフィールドのみを書き出す（startObject/endObjectなし）。
     /// @param writer 書き込み先のFormatWriter。
     /// @param obj 対象オブジェクトのvoidポインタ。
-    /// @param provider ObjectSerializerを解決するProvider。
     /// @note ポリモーフィック型の書き出し時に使用する。
-    virtual void writeFields(FormatWriter& writer, const void* obj,
-        const SerializationProvider& provider = SerializerObjectSerializationProvider{}) const = 0;
+    virtual void writeFields(FormatWriter& writer, const void* obj) const = 0;
 
     /// @brief オブジェクトのフィールドを読み込む。
     /// @param parser 読み取り元の FormatReader
     /// @param obj 対象オブジェクトの void* ポインタ
-    /// @param provider ObjectSerializerを解決するProvider。
     /// @note startObject/endObject は呼び出し側で処理してください。
-    virtual void readFields(FormatReader& parser, void* obj,
-        const SerializationProvider& provider = SerializerObjectSerializationProvider{}) const = 0;
+    virtual void readFields(FormatReader& parser, void* obj) const = 0;
 };
 
 // ******************************************************************************** フィールド集合による永続化
@@ -103,10 +58,9 @@ public:
 /// @tparam Field 判定対象のフィールド型
 export template <typename Field>
 concept IsReadWriteField = requires(const Field& field, FormatReader& parser, FormatWriter& writer,
-    typename Field::Owner& owner, const typename Field::Owner& constOwner,
-    const SerializationProvider& provider) {
-    { field.read(parser, owner, provider) } -> std::same_as<void>;
-    { field.write(writer, constOwner, provider) } -> std::same_as<void>;
+    typename Field::Owner& owner, const typename Field::Owner& constOwner) {
+    { field.read(parser, owner) } -> std::same_as<void>;
+    { field.write(writer, constOwner) } -> std::same_as<void>;
     { field.applyMissing(owner) } -> std::same_as<void>;
     { field.key } -> std::convertible_to<const char*>;
 };
@@ -149,11 +103,10 @@ public:
     /// @param writer 書き込み先のFormatWriter。
     /// @param obj 対象オブジェクトのvoidポインタ。
     /// @note ポリモーフィック型の書き出し時に使用する。
-    void writeFields(FormatWriter& writer, const void* obj,
-        const SerializationProvider& provider) const override {
+    void writeFields(FormatWriter& writer, const void* obj) const override {
         const Owner* owner = static_cast<const Owner*>(obj);
         forEachField([&](std::size_t, const auto& field) {
-            field.write(writer, *owner, provider);
+            field.write(writer, *owner);
         });
     }
 
@@ -161,8 +114,7 @@ public:
     /// @param parser 読み取り元のFormatReader互換オブジェクト。
     /// @param obj 対象オブジェクト。
     /// @note FieldsObjectSerializer内でフィールド探索と読み込みを行う。
-    void readFields(FormatReader& parser, void* obj,
-        const SerializationProvider& provider) const override {
+    void readFields(FormatReader& parser, void* obj) const override {
         auto& owner = *static_cast<Owner*>(obj);
         std::bitset<N_> seen{};
         while (!parser.nextIsEndObject()) {
@@ -181,7 +133,7 @@ public:
 
             // テンプレート展開により各フィールドの型に応じた処理が静的に解決される
             visitField(fieldIndex, [&](const auto& field) {
-                field.read(parser, owner, provider);
+                field.read(parser, owner);
             });
         }
 

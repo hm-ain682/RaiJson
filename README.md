@@ -141,79 +141,8 @@ int main() {
 }
 ```
 
-## Using SerializationProvider with provider-specific converters 🔌
-When you want field conversion to be resolved only by a custom `SerializationProvider`,
-use `getSerializationProviderConverter<T>()` and pass it to field helpers such as
-`getRequiredField` or `getDefaultOmittedField`.
-
-```cpp
-import rai.serialization.field_serializer;
-import rai.serialization.object_serializer;
-import rai.serialization.object_converter;
-import rai.serialization.json_io;
-
-struct Child {
-    int value = 0;
-    std::string name;
-
-    const rai::serialization::ObjectSerializer& serializer() const {
-        static const auto fields = rai::serialization::getFieldSet(
-            rai::serialization::getRequiredField(&Child::value, "value"),
-            rai::serialization::getRequiredField(&Child::name, "name")
-        );
-        return fields;
-    }
-};
-
-struct Parent {
-    Child child;
-    int count = 0;
-
-    const rai::serialization::ObjectSerializer& serializer() const {
-        static const auto fields = rai::serialization::getFieldSet(
-            rai::serialization::getRequiredField(
-                &Parent::child,
-                "child",
-                rai::serialization::getSerializationProviderConverter<Child>()
-            ),
-            rai::serialization::getDefaultOmittedField(&Parent::count, "count", 0)
-        );
-        return fields;
-    }
-};
-
-class ParentProvider : public rai::serialization::SerializationProvider {
-public:
-    const rai::serialization::ObjectSerializer* getSerializer(
-        std::type_index objectType,
-        const void* objectAddress) const override {
-        if (objectType == typeid(Child)) {
-            static const auto childFields = rai::serialization::getFieldSet(
-                rai::serialization::getRequiredField(&Child::value, "v"),
-                rai::serialization::getRequiredField(&Child::name, "n")
-            );
-            static_cast<void>(objectAddress);
-            return &childFields;
-        }
-        static_cast<void>(objectAddress);
-        return nullptr;
-    }
-};
-
-int main() {
-    ParentProvider provider;
-    Parent parent{};
-    parent.child.value = 7;
-    parent.child.name = "child";
-
-    std::string json = rai::serialization::getJsonContent(parent, provider);
-    // {child:{v:7,n:"child"}}
-}
-```
-
 Notes:
-- `SerializerConverter<T>` uses `T::serializer()` directly and does not resolve through provider.
-- `SerializationProviderConverter<T>` requires provider resolution and throws if unresolved.
+- `makeObjectSerializerConverter<T>(serializer)` is the preferred way to override nested object fields explicitly.
 
 ## File input variants and unknown keys 🗂️
 File loading supports sequential, parallel, and auto-selected paths. You can also collect unknown keys.

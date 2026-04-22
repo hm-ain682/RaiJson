@@ -37,13 +37,11 @@ template <typename Converter, typename Value>
 concept IsObjectConverter = std::is_class_v<Converter>
     && requires { typename Converter::Value; }
     && std::is_same_v<typename Converter::Value, Value>
-    && requires(const Converter& converter, FormatWriter& writer, const Value& value,
-        const SerializationProvider& provider) {
-        converter.write(writer, value, provider);
+    && requires(const Converter& converter, FormatWriter& writer, const Value& value) {
+        converter.write(writer, value);
     }
-    && requires(const Converter& converter, FormatReader& parser,
-        const SerializationProvider& provider) {
-        { converter.read(parser, provider) } -> std::same_as<Value>;
+    && requires(const Converter& converter, FormatReader& parser) {
+        { converter.read(parser) } -> std::same_as<Value>;
     };
 
 /// @brief readメソッドを持つ型を表すconcept。
@@ -95,13 +93,11 @@ struct FundamentalConverter {
         "FundamentalConverter requires T to be a fundamental JSON value or std::string");
     using Value = T;
 
-    void write(JsonWriter& writer, const T& value, const SerializationProvider& provider) const {
-        static_cast<void>(provider);
+    void write(JsonWriter& writer, const T& value) const {
         writer.writeObject(value);
     }
 
-    T read(JsonParser& parser, const SerializationProvider& provider) const {
-        static_cast<void>(provider);
+    T read(JsonParser& parser) const {
         T out{};
         parser.readTo(out);
         return out;
@@ -118,17 +114,16 @@ struct ObjectSerializerConverter {
     explicit ObjectSerializerConverter(const Serializer& serializer)
         : serializer_(serializer) {}
 
-    void write(JsonWriter& writer, const Value& value,
-        const SerializationProvider& provider) const {
+    void write(JsonWriter& writer, const Value& value) const {
         writer.startObject();
-        serializer_.writeFields(writer, static_cast<const void*>(&value), provider);
+        serializer_.writeFields(writer, static_cast<const void*>(&value));
         writer.endObject();
     }
 
-    Value read(JsonParser& parser, const SerializationProvider& provider) const {
+    Value read(JsonParser& parser) const {
         Value out{};
         parser.startObject();
-        serializer_.readFields(parser, static_cast<void*>(&out), provider);
+        serializer_.readFields(parser, static_cast<void*>(&out));
         parser.endObject();
         return out;
     }
@@ -147,73 +142,29 @@ constexpr auto makeObjectSerializerConverter(const Serializer& serializer) {
 template <typename T>
 concept HasSerializer = requires(const T& t) { t.serializer(); };
 
-/// @brief serializer() を直接使う型のコンバータ。SerializationProvider による動的解決は行わない。
+/// @brief serializer() を直接使う型のコンバータ。
 template <typename T>
 struct SerializerConverter {
     static_assert(HasSerializer<T> && std::default_initializable<T>,
         "SerializerConverter requires T to have serializer() and be default-initializable");
     using Value = T;
 
-    void write(FormatWriter& writer, const T& obj, const SerializationProvider& provider) const {
-        static_cast<void>(provider);
+    void write(FormatWriter& writer, const T& obj) const {
         writer.startObject();
         const auto& fields = obj.serializer();
-        fields.writeFields(writer, static_cast<const void*>(&obj), provider);
+        fields.writeFields(writer, static_cast<const void*>(&obj));
         writer.endObject();
     }
 
-    T read(FormatReader& parser, const SerializationProvider& provider) const {
-        static_cast<void>(provider);
+    T read(FormatReader& parser) const {
         T obj{};
         parser.startObject();
         auto& fields = obj.serializer();
-        fields.readFields(parser, static_cast<void*>(&obj), provider);
+        fields.readFields(parser, static_cast<void*>(&obj));
         parser.endObject();
         return obj;
     }
 };
-
-/// @brief SerializationProvider による動的解決を行う型のコンバータ。
-/// @details provider.getSerializerFromObject() で解決できない場合は例外を投げる。
-template <typename T>
-struct SerializationProviderConverter {
-    static_assert(std::default_initializable<T>,
-        "SerializationProviderConverter requires T to be default-initializable");
-    using Value = T;
-
-    void write(FormatWriter& writer, const T& obj, const SerializationProvider& provider) const {
-        const ObjectSerializer* objectSerializer = provider.getSerializerFromObject(obj);
-        if (objectSerializer == nullptr) {
-            throw std::runtime_error(
-                "SerializationProviderConverter::write: no serializer resolved from provider");
-        }
-        writer.startObject();
-        objectSerializer->writeFields(writer, static_cast<const void*>(&obj), provider);
-        writer.endObject();
-    }
-
-    T read(FormatReader& parser, const SerializationProvider& provider) const {
-        T obj{};
-        const ObjectSerializer* objectSerializer = provider.getSerializerFromObject(obj);
-        if (objectSerializer == nullptr) {
-            throw std::runtime_error(
-                "SerializationProviderConverter::read: no serializer resolved from provider");
-        }
-        parser.startObject();
-        objectSerializer->readFields(parser, static_cast<void*>(&obj), provider);
-        parser.endObject();
-        return obj;
-    }
-};
-
-/// @brief SerializationProviderConverter の既定インスタンスを返す。
-/// @tparam T 変換対象型。
-/// @return 型T向けのSerializationProviderConverterへの参照。
-template <typename T>
-constexpr const auto& getSerializationProviderConverter() {
-    static const SerializationProviderConverter<T> instance{};
-    return instance;
-}
 
 /// @brief readメソッドを持つ型を表すconcept。
 /// @tparam T 型。
@@ -232,12 +183,10 @@ struct ReadWriteFormatConverter {
         "ReadWriteFormatConverter requires T to have read/write and be default-initializable");
     using Value = T;
 
-    void write(FormatWriter& writer, const T& obj, const SerializationProvider& provider) const {
-        static_cast<void>(provider);
+    void write(FormatWriter& writer, const T& obj) const {
         obj.write(writer);
     }
-    T read(FormatReader& parser, const SerializationProvider& provider) const {
-        static_cast<void>(provider);
+    T read(FormatReader& parser) const {
         T out{};
         out.read(parser);
         return out;
@@ -267,25 +216,23 @@ struct OptionalConverter {
     /// @brief optional値をJSONへ書き出す。
     /// @param writer 出力先ライタ。
     /// @param value 書き出す optional 値。
-    /// @param provider 動的シリアライザー解決に使うプロバイダ。
-    void write(JsonWriter& writer, const T& value, const SerializationProvider& provider) const {
+    void write(JsonWriter& writer, const T& value) const {
         if (!value.has_value()) {
             writer.null();
             return;
         }
-        elementConverter_.get().write(writer, *value, provider);
+        elementConverter_.get().write(writer, *value);
     }
 
     /// @brief JSONからoptional値を読み込む。
     /// @param parser 入力元パーサ。
-    /// @param provider 動的シリアライザー解決に使うプロバイダ。
     /// @return 読み込んだ optional 値。
-    T read(JsonParser& parser, const SerializationProvider& provider) const {
+    T read(JsonParser& parser) const {
         if (parser.nextIsNull()) {
             parser.skipValue();
             return std::nullopt;
         }
-        Element element = elementConverter_.get().read(parser, provider);
+        Element element = elementConverter_.get().read(parser);
         return T{ std::move(element) };
     }
 
@@ -432,8 +379,7 @@ struct EnumConverter {
     constexpr explicit EnumConverter(const MapType& map)
         : map_(map) {}
 
-    void write(JsonWriter& writer, const Enum& value, const SerializationProvider& provider) const {
-        static_cast<void>(provider);
+    void write(JsonWriter& writer, const Enum& value) const {
         if (auto name = map_.toName(value)) {
             writer.writeObject(*name);
             return;
@@ -441,8 +387,7 @@ struct EnumConverter {
         throw std::runtime_error("Failed to convert enum to string");
     }
 
-    Enum read(JsonParser& parser, const SerializationProvider& provider) const {
-        static_cast<void>(provider);
+    Enum read(JsonParser& parser) const {
         std::string jsonValue;
         parser.readTo(jsonValue);
         if (auto v = map_.fromName(jsonValue)) {
@@ -505,20 +450,19 @@ struct ContainerConverter {
     constexpr explicit ContainerConverter(const ElementConverter& elemConv)
         : elementConverter_(std::cref(elemConv)) {}
 
-    void write(JsonWriter& writer, const Container& range, const SerializationProvider& provider)
-        const {
+    void write(JsonWriter& writer, const Container& range) const {
         writer.startArray();
         for (const auto& e : range) {
-            elementConverter_.get().write(writer, e, provider);
+            elementConverter_.get().write(writer, e);
         }
         writer.endArray();
     }
 
-    Container read(JsonParser& parser, const SerializationProvider& provider) const {
+    Container read(JsonParser& parser) const {
         Container out{};
         parser.startArray();
         while (!parser.nextIsEndArray()) {
-            auto elem = elementConverter_.get().read(parser, provider);
+            auto elem = elementConverter_.get().read(parser);
             if constexpr (requires(Container& c, Element&& v) {
                     c.push_back(std::declval<Element>());
                 }) {
@@ -595,21 +539,20 @@ struct UniquePtrConverter {
     constexpr explicit UniquePtrConverter(const ElemConvT& conv)
         : targetConverter_(std::cref(conv)) {}
 
-    void write(JsonWriter& writer, const T& ptr, const SerializationProvider& provider) const {
+    void write(JsonWriter& writer, const T& ptr) const {
         if (!ptr) {
             writer.null();
             return;
         }
-        targetConverter_.get().write(writer, *ptr, provider);
+        targetConverter_.get().write(writer, *ptr);
     }
 
-    T read(JsonParser& parser, const SerializationProvider& provider)
- const {
+    T read(JsonParser& parser) const {
         if (parser.nextIsNull()) {
             parser.skipValue();
             return nullptr;
         }
-        auto elem = targetConverter_.get().read(parser, provider);
+        auto elem = targetConverter_.get().read(parser);
         return std::make_unique<Element>(std::move(elem));
     }
 
@@ -669,17 +612,16 @@ struct TokenConverter {
         return this->template read<std::string>(parser, "String is not supported for TokenConverter");
     }
 
-    Value readStartObject(JsonParser& parser, const SerializationProvider& provider) const {
+    Value readStartObject(JsonParser& parser) const {
         if constexpr (HasSerializer<Value> || (HasReadFormat<Value> && HasWriteFormat<Value>)) {
-            return getConverter<Value>().read(parser, provider);
+            return getConverter<Value>().read(parser);
         }
         else {
             throw std::runtime_error("Object is not supported for TokenConverter");
         }
     }
 
-    Value readStartArray(JsonParser& parser, const SerializationProvider& provider) const {
-        static_cast<void>(provider);
+    Value readStartArray(JsonParser& parser) const {
         // デフォルトでは配列はサポートしない（必要なら派生で実装）
         throw std::runtime_error("Array is not supported for TokenConverter");
     }
@@ -696,9 +638,9 @@ protected:
         }
     }
 
-    void write(JsonWriter& writer, const Value& value, const SerializationProvider& provider) const {
+    void write(JsonWriter& writer, const Value& value) const {
         if constexpr (IsDefaultConverterSupported<Value>) {
-            getConverter<Value>().write(writer, value, provider);
+            getConverter<Value>().write(writer, value);
         }
         else {
             static_assert(false, "TokenConverter::write: unsupported Value type");
@@ -719,23 +661,22 @@ struct TokenDispatchConverter {
         : tokenConverter_(conv) {}
 
     /// @brief トークン種別に応じて適切な変換関数を呼び出して値を読み取る。
-    ValueType read(JsonParser& parser, const SerializationProvider& provider) const {
+    ValueType read(JsonParser& parser) const {
         switch (parser.nextTokenType()) {
         case JsonTokenType::Null:        return tokenConverter_.readNull(parser);
         case JsonTokenType::Bool:        return tokenConverter_.readBool(parser);
         case JsonTokenType::Integer:     return tokenConverter_.readInteger(parser);
         case JsonTokenType::Number:      return tokenConverter_.readNumber(parser);
         case JsonTokenType::String:      return tokenConverter_.readString(parser);
-        case JsonTokenType::StartObject: return tokenConverter_.readStartObject(parser, provider);
-        case JsonTokenType::StartArray:  return tokenConverter_.readStartArray(parser, provider);
+        case JsonTokenType::StartObject: return tokenConverter_.readStartObject(parser);
+        case JsonTokenType::StartArray:  return tokenConverter_.readStartArray(parser);
         default: throw std::runtime_error("Unsupported token type");
         }
     }
 
     /// @brief 値を JSON に書き出すための関数を呼び出す。
-    void write(JsonWriter& writer, const ValueType& value, const SerializationProvider& provider)
-        const {
-        tokenConverter_.write(writer, value, provider);
+    void write(JsonWriter& writer, const ValueType& value) const {
+        tokenConverter_.write(writer, value);
     }
 
 private:
@@ -820,16 +761,15 @@ struct VariantElementConverter : TokenConverter<Variant> {
     /// @brief StartArray トークンを読み取り、variant を返す。
     /// @param parser 読み取り元の JsonParser
     /// @return 読み取った値
-    Variant readStartArray(JsonParser& parser, const SerializationProvider& provider) const {
+    Variant readStartArray(JsonParser& parser) const {
         (void)parser;
-        static_cast<void>(provider);
         throw std::runtime_error("Array is not supported in variant");
     }
 
     /// @brief StartObject トークンを読み取り、variant を返す。
     /// @param parser 読み取り元の JsonParser
     /// @return 読み取った値
-    Variant readStartObject(JsonParser& parser, const SerializationProvider& provider) const {
+    Variant readStartObject(JsonParser& parser) const {
         bool found = false;
         Variant out{};
         [&]<std::size_t... I>(std::index_sequence<I...>) {
@@ -837,7 +777,7 @@ struct VariantElementConverter : TokenConverter<Variant> {
             ((void)(!found && ([&]() {
                 using Alt = std::remove_cvref_t<typename std::variant_alternative_t<I, Variant>>;
                 if constexpr (HasSerializer<Alt> || (HasReadFormat<Alt> && HasWriteFormat<Alt>)) {
-                    out = getConverter<Alt>().read(parser, provider);
+                    out = getConverter<Alt>().read(parser);
                     found = true;
                 }
                 return 0;
@@ -854,16 +794,16 @@ struct VariantElementConverter : TokenConverter<Variant> {
     /// @param writer 書き込み先の JsonWriter
     /// @param value 書き込む値
     void write(
-        JsonWriter& writer, const Variant& value, const SerializationProvider& provider) const {
+        JsonWriter& writer, const Variant& value) const {
         std::visit([&](const auto& inner) {
-            this->write(writer, inner, provider);
+            this->write(writer, inner);
         }, value);
     }
 
     template<typename T>
-    void write(JsonWriter& writer, const T& value, const SerializationProvider& provider) const {
+    void write(JsonWriter& writer, const T& value) const {
         static const auto& conv = getConverter<std::remove_cvref_t<T>>();
-        conv.write(writer, value, provider);
+        conv.write(writer, value);
     }
 private:
     static constexpr bool canAssignNullptr() noexcept {
@@ -920,7 +860,7 @@ constexpr auto getVariantConverter(ElementConverterType elementConverter) {
 template <typename Converter, typename Value>
     requires IsObjectConverter<Converter, Value>
 void write(JsonWriter& writer, const Converter& converter, const Value& value) {
-    converter.write(writer, value, SerializerObjectSerializationProvider{});
+    converter.write(writer, value);
 }
 
 /// @brief parserから読み込んでconverterでValueに変換して返す。
@@ -932,7 +872,7 @@ void write(JsonWriter& writer, const Converter& converter, const Value& value) {
 template <typename Converter>
     requires IsObjectConverter<Converter, typename Converter::Value>
 typename Converter::Value read(JsonParser& parser, const Converter& converter) {
-    return converter.read(parser, SerializerObjectSerializationProvider{});
+    return converter.read(parser);
 }
 
 }  // namespace rai::serialization

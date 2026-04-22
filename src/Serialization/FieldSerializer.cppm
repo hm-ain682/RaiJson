@@ -195,27 +195,23 @@ struct FieldSerializer {
         : member(memberPtr), converter_(conv), key(keyName),
           omittedBehavior_(std::move(behavior)) {}
 
-    /// @brief JSON から値を読み取り、Provider 付きで所有者のメンバに設定する。
+    /// @brief JSON から値を読み取り、所有者のメンバに設定する。
     /// @param parser 読み取り元の FormatReader。
     /// @param owner 代入先の所有者。
-    /// @param provider シリアライザ解決に利用するProvider。
-    void read(FormatReader& parser, Owner& owner,
-        const SerializationProvider& provider) const {
-        owner.*member = converter_.get().read(parser, provider);
+    void read(FormatReader& parser, Owner& owner) const {
+        owner.*member = converter_.get().read(parser);
     }
 
-    /// @brief JSON項目（キーと値）をProvider付きで書き出す。
+    /// @brief JSON項目（キーと値）を書き出す。
     /// @param writer 書き込み先の FormatWriter。
     /// @param owner 書き出し元の所有者。
-    /// @param provider シリアライザ解決に利用するProvider。
-    void write(FormatWriter& writer, const Owner& owner,
-        const SerializationProvider& provider) const {
+    void write(FormatWriter& writer, const Owner& owner) const {
         const auto& value = owner.*member;
         if (omittedBehavior_.shouldSkipWrite(value)) {
             return;
         }
         writer.key(key);
-        converter_.get().write(writer, value, provider);
+        converter_.get().write(writer, value);
     }
 
     /// @brief 欠落時の挙動を適用する。

@@ -83,7 +83,7 @@ export template <typename Ptr>
     requires IsSmartOrRawPointer<Ptr>
 Ptr readPolymorphicInstance(JsonParser& parser,
     const collection::MapReference<std::string_view, PolymorphicTypeFactory<Ptr>>& entriesMap,
-    std::string_view jsonKey, const SerializationProvider& provider) {
+    std::string_view jsonKey) {
 
     parser.startObject();
 
@@ -108,13 +108,9 @@ Ptr readPolymorphicInstance(JsonParser& parser,
     using BaseType = typename PointerElementType<Ptr>::type;
 
     BaseType* raw = std::to_address(instance);
-    const ObjectSerializer* objectSerializer = provider.getSerializerFromObject(*raw);
-    if (objectSerializer != nullptr) {
-        objectSerializer->readFields(parser, raw, provider);
-    }
-    else if constexpr (HasSerializer<BaseType>) {
+    if constexpr (HasSerializer<BaseType>) {
         auto& fields = instance->serializer();
-        fields.readFields(parser, raw, provider);
+        fields.readFields(parser, raw);
     }
     else {
         while (!parser.nextIsEndObject()) {
@@ -133,7 +129,7 @@ export template <typename Ptr>
     requires IsSmartOrRawPointer<Ptr>
 Ptr readPolymorphicInstanceOrNull(JsonParser& parser,
     const collection::MapReference<std::string_view, PolymorphicTypeFactory<Ptr>>& entriesMap,
-    std::string_view jsonKey, const SerializationProvider& provider) {
+    std::string_view jsonKey) {
     // null値の場合はnullptrを返す
     if (parser.nextIsNull()) {
         parser.skipValue();
@@ -141,7 +137,7 @@ Ptr readPolymorphicInstanceOrNull(JsonParser& parser,
     }
     // オブジェクトの場合は通常の読み取り処理
     auto position = parser.nextPosition();
-    auto instance = readPolymorphicInstance<Ptr>(parser, entriesMap, jsonKey, provider);
+    auto instance = readPolymorphicInstance<Ptr>(parser, entriesMap, jsonKey);
     if (instance == nullptr) {
          throw std::runtime_error("Unknown polymorphic type: " + std::to_string(position));
     }
@@ -176,14 +172,14 @@ struct PolymorphicConverter {
         const Entries& entries, const char* jsonKey = "type", bool allowNull = true)
         : entries_(entries), jsonKey_(jsonKey), allowNull_(allowNull) {}
 
-    Ptr read(JsonParser& parser, const SerializationProvider& provider) const {
+    Ptr read(JsonParser& parser) const {
         if (allowNull_) {
-            return readPolymorphicInstanceOrNull<Ptr>(parser, entries_, jsonKey_, provider);
+            return readPolymorphicInstanceOrNull<Ptr>(parser, entries_, jsonKey_);
         }
-        return readPolymorphicInstance<Ptr>(parser, entries_, jsonKey_, provider);
+        return readPolymorphicInstance<Ptr>(parser, entries_, jsonKey_);
     }
 
-    void write(JsonWriter& writer, const Ptr& ptr, const SerializationProvider& provider) const {
+    void write(JsonWriter& writer, const Ptr& ptr) const {
         if (!ptr) {
             writer.null();
             return;
@@ -193,13 +189,9 @@ struct PolymorphicConverter {
         writer.key(jsonKey_);
         writer.writeObject(typeName);
         Element* raw = std::to_address(ptr);
-        const ObjectSerializer* objectSerializer = provider.getSerializerFromObject(*raw);
-        if (objectSerializer != nullptr) {
-            objectSerializer->writeFields(writer, raw, provider);
-        }
-        else if constexpr (HasSerializer<Element>) {
+        if constexpr (HasSerializer<Element>) {
             auto& fields = ptr->serializer();
-            fields.writeFields(writer, raw, provider);
+            fields.writeFields(writer, raw);
         }
         else {
             throw std::runtime_error(
