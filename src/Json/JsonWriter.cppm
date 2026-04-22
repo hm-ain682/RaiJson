@@ -9,7 +9,7 @@ module;
 #include <string_view>
 #include <type_traits>
 
-export module rai.serialization.json_writer;
+export module rai.serialization.json:json_writer;
 
 export namespace rai::serialization {
 

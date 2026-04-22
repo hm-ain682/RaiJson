@@ -22,15 +22,13 @@ module;
 #include <set>
 #include <unordered_set>
 
-export module rai.serialization.polymorphic_converter;
+export module rai.serialization.core:polymorphic_converter;
 
-import rai.serialization.json_writer;
-import rai.serialization.json_parser;
-import rai.serialization.token_manager;
-import rai.serialization.object_converter;
-import rai.serialization.object_serializer;
-
+import :object_converter;
+import :object_serializer;
 import rai.collection.sorted_hash_array_map;
+import rai.serialization.token_manager;
+import rai.serialization.json;
 
 namespace rai::serialization {
 

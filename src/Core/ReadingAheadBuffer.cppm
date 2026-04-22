@@ -5,7 +5,7 @@ module;
 #include <string>
 #include <cassert>
 
-export module rai.serialization.reading_ahead_buffer;
+export module rai.serialization.core:reading_ahead_buffer;
 
 export namespace rai::serialization {
 

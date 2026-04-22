@@ -11,9 +11,9 @@ module;
 #include <vector>
 #include <cassert>
 
-export module rai.serialization.parallel_input_stream_source;
-import rai.serialization.reading_ahead_double_buffer;
-import rai.serialization.reading_ahead_buffer;
+export module rai.serialization.core:parallel_input_stream_source;
+import :reading_ahead_double_buffer;
+import :reading_ahead_buffer;
 import rai.common.thread_pool;
 
 export namespace rai::serialization {

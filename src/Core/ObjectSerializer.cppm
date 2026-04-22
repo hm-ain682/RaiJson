@@ -22,10 +22,10 @@ module;
 #include <typeinfo>
 #include <typeindex>
 
+export module rai.serialization.core:object_serializer;
+import :format_io;
 import rai.collection.sorted_hash_array_map;
-import rai.serialization.format_io;
 import rai.serialization.token_manager;
-export module rai.serialization.object_serializer;
 
 namespace rai::serialization {
 

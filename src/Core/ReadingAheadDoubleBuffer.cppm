@@ -7,7 +7,7 @@ module;
 #include <stdexcept>
 #include <vector>
 
-export module rai.serialization.reading_ahead_double_buffer;
+export module rai.serialization.core:reading_ahead_double_buffer;
 
 export namespace rai::serialization {
 

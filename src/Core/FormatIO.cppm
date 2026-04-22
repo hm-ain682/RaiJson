@@ -3,10 +3,9 @@
 
 module;
 
-export module rai.serialization.format_io;
+export module rai.serialization.core:format_io;
 
-import rai.serialization.json_writer;
-import rai.serialization.json_parser;
+import rai.serialization.json;
 import rai.serialization.token_manager;
 
 export namespace rai::serialization {

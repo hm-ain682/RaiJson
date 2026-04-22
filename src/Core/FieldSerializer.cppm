@@ -25,13 +25,12 @@ module;
 #include <unordered_set>
 #include <span>
 
-export module rai.serialization.field_serializer;
+export module rai.serialization.core:field_serializer;
 
-import rai.serialization.object_converter;
-import rai.serialization.object_serializer;
-import rai.serialization.format_io;
+import :object_converter;
+import :object_serializer;
+import :format_io;
 import rai.serialization.token_manager;
-
 import rai.collection.sorted_hash_array_map;
 
 namespace rai::serialization {

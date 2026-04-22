@@ -8,7 +8,7 @@ module;
 #include <variant>
 #include <vector>
 
-export module rai.serialization.json_parser;
+export module rai.serialization.json:json_parser;
 
 import rai.serialization.token_manager;
 

@@ -26,7 +26,7 @@ module;
     case '6': case '7': case '8': case '9'
 #define CASE_PART_DIGITS case '0': CASE_PART_DIGITS19
 
-export module rai.serialization.json_tokenizer;
+export module rai.serialization.json:json_tokenizer;
 
 import rai.serialization.token_manager;
 

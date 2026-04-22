@@ -16,24 +16,24 @@ fast, dependency-free parsing and convenient, declarative mappings between C++ t
 - Clang/clang++ (tested with Clang 17+) with C++23 modules support, or `clang-cl` for MSVC-compatible builds
 - Ninja (recommended)
 
-> Note: The CMake configure presets in this repository set `RAIJSON_BUILD_TESTS=ON` by default.
+> Note: The CMake configure presets in this repository set `RAISERIALIZATION_BUILD_TESTS=ON` by default.
 
 ## Build (using presets) 🔧
 Configure and build using the provided presets (recommended):
 
 ```powershell
-cmake --preset clang-ninja
-cmake --build --preset clang-ninja-debug
+cmake --preset clang
+cmake --build --preset clang-debug
 ```
 
 Build a specific test target (example):
 
 ```powershell
-cmake --build --preset clang-ninja-debug --target RaiSerialization_JsonTest
+cmake --build --preset clang-debug --target RaiSerialization_JsonTest
 ```
 
 ## Tests 🧪
-Tests are built when `RAIJSON_BUILD_TESTS` is enabled (the configure presets enable this by default).
+Tests are built when `RAISERIALIZATION_BUILD_TESTS` is enabled (the configure presets enable this by default).
 Run the test suite with:
 
 ```powershell
@@ -55,7 +55,7 @@ Avoid running bare `ctest` from arbitrary directories; use the preset above to k
 To install the library from a configured build directory:
 
 ```powershell
-cmake --build build/clang-ninja --target install
+cmake --build build/clang --target install
 ```
 
 In a downstream CMake project:
@@ -86,8 +86,7 @@ Note: `RaiSerialization::RaiSerializationTest` is only available when the test h
 A minimal example showing field-based reflection:
 
 ```cpp
-import rai.serialization.field_serializer;
-import rai.serialization.object_serializer;
+import rai.serialization.core;
 import rai.serialization.json_io;
 
 struct Point {
@@ -117,9 +116,7 @@ through an explicit `ObjectSerializer` instance rather than relying on the defau
 field-based helper converter.
 
 ```cpp
-import rai.serialization.field_serializer;
-import rai.serialization.object_converter;
-import rai.serialization.object_serializer;
+import rai.serialization.core;
 import rai.serialization.json_io;
 
 struct Item {
@@ -148,8 +145,7 @@ Notes:
 File loading supports sequential, parallel, and auto-selected paths. You can also collect unknown keys.
 
 ```cpp
-import rai.serialization.field_serializer;
-import rai.serialization.object_serializer;
+import rai.serialization.core;
 import rai.serialization.json_io;
 
 struct Config {
@@ -180,8 +176,7 @@ Serialize enum members as strings by defining `EnumEntry` values and using `getR
 `getEnumConverter` accepts C arrays, `std::array`, or `std::span` of `EnumEntry`.
 
 ```cpp
-import rai.serialization.field_serializer;
-import rai.serialization.object_serializer;
+import rai.serialization.core;
 import rai.serialization.json_io;
 
 enum class Color { Red, Green, Blue };
@@ -208,8 +203,7 @@ Register derived-type factory functions in a map and the serializer will include
 The type key can be customized when creating the polymorphic field.
 
 ```cpp
-import rai.serialization.field_serializer;
-import rai.serialization.object_serializer;
+import rai.serialization.core;
 import rai.serialization.json_io;
 import rai.collection.sorted_hash_array_map;
 #include <memory>
@@ -275,7 +269,7 @@ If you prefer full control, implement `void write(FormatWriter&) const` and
 when such types are encountered inside `FieldSerializer`-driven structures.
 
 ```cpp
-import rai.serialization.format_io;
+import rai.serialization.core;
 import rai.serialization.json_io;
 
 struct CustomData {
@@ -309,16 +303,16 @@ struct CustomData {
 ## Source overview 🔍
 - `src/Common/SortedHashArrayMap.cppm`: Fixed-size hash + sorted array map for fast key lookup without allocations.
 - `src/Common/ThreadPool.cppm`: Lightweight task queue used by parallel I/O helpers.
-- `src/Serialization/Json/JsonTokenizer.cppm`: JSON5 tokenizer with comment and whitespace handling.
-- `src/Serialization/TokenManager.cppm`: Token queue abstraction for thread-safe parsing.
-- `src/Serialization/FormatIO.cppm`: Default format aliases (`FormatReader`/`FormatWriter`) used by serializer internals.
-- `src/Serialization/Json/JsonParser.cppm`: Token-based JsonParser with strong type checks and unknown-key tracking.
-- `src/Serialization/Json/JsonWriter.cppm`: JSON5 writer with identifier-aware key emission and escaping.
-- `src/Serialization/ObjectConverter.cppm`: Converters for primitives, enums, containers, pointers, and custom types.
-- `src/Serialization/PolymorphicConverter.cppm`: Polymorphic converters with type tags.
-- `src/Serialization/FieldSerializer.cppm`: Field descriptors and omit behaviors.
-- `src/Serialization/ObjectSerializer.cppm`: Field-set reflection and (de)serialization glue.
-- `src/Serialization/Json/JsonIO.cppm`: High-level helpers for reading/writing strings, files, and streams.
+- `src/Json/JsonTokenizer.cppm`: JSON5 tokenizer with comment and whitespace handling.
+- `src/Core/TokenManager.cppm`: Token queue abstraction for thread-safe parsing.
+- `src/Core/FormatIO.cppm`: Default format aliases (`FormatReader`/`FormatWriter`) used by serializer internals.
+- `src/Json/JsonParser.cppm`: Token-based JsonParser with strong type checks and unknown-key tracking.
+- `src/Json/JsonWriter.cppm`: JSON5 writer with identifier-aware key emission and escaping.
+- `src/Core/ObjectConverter.cppm`: Converters for primitives, enums, containers, pointers, and custom types.
+- `src/Core/PolymorphicConverter.cppm`: Polymorphic converters with type tags.
+- `src/Core/FieldSerializer.cppm`: Field descriptors and omit behaviors.
+- `src/Core/ObjectSerializer.cppm`: Field-set reflection and (de)serialization glue.
+- `src/Json/JsonIO.cppm`: High-level helpers for reading/writing strings, files, and streams.
 
 ---
 

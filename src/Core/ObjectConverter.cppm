@@ -16,15 +16,13 @@ module;
 #include <ranges>
 #include <span>
 
-export module rai.serialization.object_converter;
+export module rai.serialization.core:object_converter;
 
-import rai.serialization.format_io;
-import rai.serialization.json_writer;
-import rai.serialization.json_parser;
-import rai.serialization.token_manager;
-import rai.serialization.object_serializer;
-
+import :format_io;
+import :object_serializer;
 import rai.collection.sorted_hash_array_map;
+import rai.serialization.token_manager;
+import rai.serialization.json;
 
 export namespace rai::serialization {
 
