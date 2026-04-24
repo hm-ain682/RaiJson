@@ -432,6 +432,29 @@ concept LikesString = std::is_same_v<T, std::string> || std::is_same_v<T, std::s
 template<typename T>
 concept IsContainer = std::ranges::range<T> && !LikesString<T>;
 
+/// @brief コンテナに要素を追加するヘルパー。
+/// @tparam Container 追加先コンテナ。
+/// @tparam Element 追加する要素の型。
+/// @param container 追加先コンテナ。
+/// @param element 追加する要素。
+template <typename Container, typename Element>
+constexpr void insertContainerElement(Container& container, Element&& element) {
+    if constexpr (requires(Container& c, Element&& v) {
+            c.push_back(std::forward<Element>(v));
+        }) {
+        container.push_back(std::forward<Element>(element));
+    }
+    else if constexpr (requires(Container& c, Element&& v) {
+            c.insert(std::forward<Element>(v));
+        }) {
+        container.insert(std::forward<Element>(element));
+    }
+    else {
+        static_assert(false,
+            "insertContainerElement: container must support push_back or insert");
+    }
+}
+
 /// @brief コンテナの変換方法。
 template <typename Container, typename ElementConverter>
 struct ContainerConverter {
@@ -461,20 +484,7 @@ struct ContainerConverter {
         parser.startArray();
         while (!parser.nextIsEndArray()) {
             auto elem = elementConverter_.get().read(parser);
-            if constexpr (requires(Container& c, Element&& v) {
-                    c.push_back(std::declval<Element>());
-                }) {
-                out.push_back(std::move(elem));
-            }
-            else if constexpr (requires(Container& c, Element&& v) {
-                    c.insert(std::declval<Element>());
-                }) {
-                out.insert(std::move(elem));
-            }
-            else {
-                static_assert(false,
-                    "ContainerConverter: container must support push_back or insert");
-            }
+            insertContainerElement(out, std::move(elem));
         }
         parser.endArray();
         return out;
@@ -501,6 +511,143 @@ constexpr auto getContainerConverter() {
 template <typename Container, typename ElementConverter>
 constexpr auto getContainerConverter(const ElementConverter& elemConv) {
     return ContainerConverter<Container, ElementConverter>(elemConv);
+}
+
+// ******************************************************************************** 二重配列表形式
+
+template <typename Serializer, typename Container>
+concept IsFieldsObjectSerializer = requires(const Serializer& s,
+        std::remove_cvref_t<std::ranges::range_value_t<Container>>& item) {
+        { s.size() } -> std::same_as<std::size_t>;
+        { s.getFieldName(std::size_t{}) } -> std::same_as<std::string_view>;
+        { s.writeFieldAt(std::size_t{}, std::declval<FormatWriter&>(),
+            std::declval<const std::remove_cvref_t<std::ranges::range_value_t<Container>>&>()) };
+        { s.readFieldAt(std::size_t{}, std::declval<FormatReader&>(), item) };
+        { s.applyMissingAt(std::size_t{}, item) };
+    };
+
+/// @brief 二重配列での表形式（カラム名配列＋値配列）でJSON変換するConverter。
+/// @tparam Container コンテナ型。
+/// @tparam Serializer フィールドシリアライザ型。
+template <typename Container, typename Serializer>
+class ColumnarConverter {
+public:
+    using Value = Container;
+    using Element = std::remove_cvref_t<std::ranges::range_value_t<Container>>;
+
+    static_assert(std::is_same_v<typename Serializer::Owner, Element>,
+        "Serializer::Owner must match container element type");
+    static_assert(IsFieldsObjectSerializer<Serializer, Container>,
+        "Serializer must satisfy IsFieldsObjectSerializer for the container type");
+
+    explicit ColumnarConverter(const Serializer& serializer)
+        : serializer_(serializer) {}
+
+    /// @brief 配列をカラム名リスト＋値リスト形式でJSON出力。
+    void write(FormatWriter& writer, const Value& value) const {
+        writer.startArray();
+        // カラム名リスト
+        writer.startArray();
+        for (std::size_t i = 0; i < serializer_.size(); ++i) {
+            writer.writeObject(serializer_.getFieldName(i));
+        }
+        writer.endArray();
+        // 各行データ
+        for (const auto& item : value) {
+            writer.startArray();
+            for (std::size_t i = 0; i < serializer_.size(); ++i) {
+                serializer_.writeFieldAt(i, writer, item);
+            }
+            writer.endArray();
+        }
+        writer.endArray();
+    }
+
+    /// @brief JSON配列から配列を復元。
+    Value read(FormatReader& parser) const {
+        parser.startArray();
+        // カラム名リスト
+        parser.startArray();
+        const std::size_t fieldCount = serializer_.size();
+        std::vector<std::size_t> fieldOrder;
+        fieldOrder.reserve(fieldCount);
+        std::vector<bool> seen(fieldCount, false);
+        while (!parser.nextIsEndArray()) {
+            std::string name;
+            parser.readTo(name);
+            const std::size_t fieldIndex = serializer_.getFieldIndex(name);
+            if (seen[fieldIndex]) {
+                throw std::runtime_error(std::string("ColumnarConverter: duplicate column name '") + name + "'");
+            }
+            seen[fieldIndex] = true;
+            fieldOrder.push_back(fieldIndex);
+        }
+        parser.endArray();
+
+        // 行ごとに無駄な反復を繰り返さないように、欠落フィールドのインデックスを事前に収集しておく。
+        std::vector<std::size_t> missingFields;
+        missingFields.reserve(fieldCount);
+        for (std::size_t index = 0; index < fieldCount; ++index) {
+            if (!seen[index]) {
+                missingFields.push_back(index);
+            }
+        }
+
+        // 各行データ
+        Value out{};
+        while (!parser.nextIsEndArray()) {
+            parser.startArray();
+
+            // 1行分のデータを読み込む。
+            Element item{};
+            std::size_t readCount = 0;
+            for (std::size_t fieldIndex : fieldOrder) {
+                if (parser.nextIsEndArray()) {
+                    break;
+                }
+                serializer_.readFieldAt(fieldIndex, parser, item);
+                ++readCount;
+            }
+            while (!parser.nextIsEndArray()) {
+                parser.skipValue();
+            }
+            parser.endArray();
+
+            // ヘッダーに存在するがこの行にデータがないフィールドは欠落とする。
+            for (std::size_t i = readCount; i < fieldOrder.size(); ++i) {
+                serializer_.applyMissingAt(fieldOrder[i], item);
+            }
+
+            // ヘッダーに存在しないフィールドは常に欠落とする。
+            for (std::size_t missingIndex : missingFields) {
+                serializer_.applyMissingAt(missingIndex, item);
+            }
+            insertContainerElement(out, std::move(item));
+        }
+        parser.endArray();
+        return out;
+    }
+
+private:
+    const Serializer& serializer_;
+};
+
+/// @brief 要素の変換方法を指定して ColumnarConverter<std::vector<T>, Serializer> を返す。
+/// @tparam T 配列要素型
+/// @tparam Serializer ObjectSerializer派生型
+template <typename T, typename Serializer>
+requires (!IsContainer<T>)
+constexpr auto getColumnarConverter(const Serializer& serializer) {
+    return ColumnarConverter<std::vector<T>, Serializer>{serializer};
+}
+
+/// @brief コンテナ型を指定して ColumnarConverter を返す。
+/// @tparam Container コンテナ型
+/// @tparam Serializer ObjectSerializer派生型
+template <typename Container, typename Serializer>
+    requires IsContainer<Container>
+constexpr auto getColumnarConverter(const Serializer& serializer) {
+    return ColumnarConverter<Container, Serializer>{serializer};
 }
 
 // ******************************************************************************** unique_ptr用変換方法

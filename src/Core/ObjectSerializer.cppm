@@ -66,10 +66,13 @@ concept IsReadWriteField = requires(const Field& field, FormatReader& parser, Fo
 };
 
 /// @brief フィールド集合による永続化クラス。
-/// @tparam Owner 所有者型。
+/// @tparam OwnerType 所有者型。
 /// @tparam Fields フィールド型のパラメータパック。
-export template <typename Owner, typename... Fields>
+export template <typename OwnerType, typename... Fields>
 class FieldsObjectSerializer : public ObjectSerializer {
+public:
+    using Owner = OwnerType;
+
 private:
     static_assert((IsReadWriteField<std::remove_cvref_t<Fields>> && ...),
         "FieldsObjectSerializer fields must satisfy FieldSerializer-like interface");
@@ -142,6 +145,56 @@ public:
             if (!seen[index]) {
                 field.applyMissing(owner);
             }
+        });
+    }
+
+    /// @brief インデックスに対応するフィールド名を返す。
+    /// @param index フィールドインデックス。
+    /// @return フィールド名。
+    std::string_view getFieldName(std::size_t index) const {
+        std::string_view name{};
+        visitField(index, [&](const auto& field) {
+            name = field.key;
+        });
+        return name;
+    }
+
+    /// @brief フィールド名からインデックスを取得する。
+    /// @param name フィールド名。
+    /// @return フィールドのインデックス。
+    std::size_t getFieldIndex(std::string_view name) const {
+        if (auto idx = fieldMap_.findIndex(name)) {
+            return *idx;
+        }
+        throw std::runtime_error(std::string("FieldsObjectSerializer: unknown field name '") + std::string(name) + "'");
+    }
+
+    /// @brief 指定インデックスのフィールド値のみを書き出す。
+    /// @param index フィールドインデックス。
+    /// @param writer 出力先のFormatWriter。
+    /// @param owner 書き出し対象オブジェクト。
+    void writeFieldAt(std::size_t index, FormatWriter& writer, const Owner& owner) const {
+        visitField(index, [&](const auto& field) {
+            field.writeValue(writer, owner);
+        });
+    }
+
+    /// @brief 指定インデックスのフィールドを読み込む。
+    /// @param index フィールドインデックス。
+    /// @param parser 入力元のFormatReader。
+    /// @param owner 読み込み先オブジェクト。
+    void readFieldAt(std::size_t index, FormatReader& parser, Owner& owner) const {
+        visitField(index, [&](const auto& field) {
+            field.read(parser, owner);
+        });
+    }
+
+    /// @brief 指定インデックスのフィールドの既定値処理を行う。
+    /// @param index フィールドインデックス。
+    /// @param owner 対象オブジェクト。
+    void applyMissingAt(std::size_t index, Owner& owner) const {
+        visitField(index, [&](const auto& field) {
+            field.applyMissing(owner);
         });
     }
 

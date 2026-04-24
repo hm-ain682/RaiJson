@@ -966,6 +966,35 @@ TEST(JsonIOConverterTest, ReadWriteWithConverter) {
         makeJsonIOConverter());
 }
 
+struct ColumnarJsonTestItem {
+    int id = 0;
+    std::string name;
+
+    bool operator==(const ColumnarJsonTestItem& other) const {
+        return id == other.id && name == other.name;
+    }
+};
+
+static auto getColumnarConverterTest() {
+    static const auto fields = getFieldSet(
+        getRequiredField(&ColumnarJsonTestItem::id, "id"),
+        getRequiredField(&ColumnarJsonTestItem::name, "name")
+    );
+    return getColumnarConverter<ColumnarJsonTestItem>(fields);
+}
+
+TEST(JsonIOConverterTest, ColumnarConverterRoundTrip) {
+    std::vector<ColumnarJsonTestItem> original{
+        {1, "one"},
+        {2, "two"}
+    };
+    auto converter = getColumnarConverterTest();
+
+    testJsonRoundTrip(original,
+        "[[\"id\",\"name\"],[1,\"one\"],[2,\"two\"]]",
+        converter);
+}
+
 /// @brief Converter版 readJsonFile のテスト。
 TEST(JsonIOConverterTest, ReadJsonFileWithConverter) {
     std::string filename = "test_converter.json";

@@ -45,6 +45,32 @@ void testJsonRoundTrip(const T& original, const std::string& expectedJson) {
 template <typename Converter>
     requires IsObjectConverter<Converter, typename Converter::Value> &&
     requires(const typename Converter::Value& a, const typename Converter::Value& b) {
+        { a == b } -> std::convertible_to<bool>;
+    }
+void testJsonRoundTrip(const typename Converter::Value& original,
+    const std::string& expectedJson, const Converter& converter) {
+    // JSON形式で書き出す
+    auto json = getJsonContent(original, converter);
+
+    // JSONの内容が正しいか確認（全体比較）
+    EXPECT_EQ(json, expectedJson);
+
+    // JSONから読み込む
+    typename Converter::Value parsed;
+    readJsonString(json, parsed, converter);
+
+    // 元のオブジェクトと内容が一致していることを確認
+    EXPECT_TRUE(parsed == original);
+}
+
+/// @brief Converter を使ってオブジェクトの JSON ラウンドトリップを検証する。
+/// @tparam Converter 変換器型。
+/// @param original 元のオブジェクト。
+/// @param expectedJson 期待される JSON 文字列。
+/// @param converter 値変換器。
+template <typename Converter>
+    requires IsObjectConverter<Converter, typename Converter::Value> &&
+    requires(const typename Converter::Value& a, const typename Converter::Value& b) {
         { a.equals(b) } -> std::convertible_to<bool>;
     }
 void testJsonRoundTrip(const typename Converter::Value& original,

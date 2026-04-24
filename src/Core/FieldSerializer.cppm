@@ -213,6 +213,14 @@ struct FieldSerializer {
         converter_.get().write(writer, value);
     }
 
+    /// @brief JSONの値のみを書き出す。
+    /// @param writer 書き込み先の FormatWriter。
+    /// @param owner 書き出し元の所有者。
+    void writeValue(FormatWriter& writer, const Owner& owner) const {
+        const auto& value = owner.*member;
+        converter_.get().write(writer, value);
+    }
+
     /// @brief 欠落時の挙動を適用する。
     /// @param owner 欠落時に代入する対象の所有者
     void applyMissing(Owner& owner) const {
