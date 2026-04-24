@@ -110,8 +110,8 @@ int main() {
 }
 ```
 
-## Using makeObjectSerializerConverter 🧩
-Use `makeObjectSerializerConverter<T>(serializer)` when you want to serialize a type
+## Using getObjectSerializerConverter 🧩
+Use `getObjectSerializerConverter<T>(serializer)` when you want to serialize a type
 through an explicit `ObjectSerializer` instance rather than relying on the default
 field-based helper converter.
 
@@ -131,7 +131,7 @@ static const auto itemFields = rai::serialization::getFieldSet(
 
 int main() {
     Item original{7, "converter"};
-    auto converter = rai::serialization::makeObjectSerializerConverter<Item>(itemFields);
+    auto converter = rai::serialization::getObjectSerializerConverter<Item>(itemFields);
     std::string json = rai::serialization::getJsonContent(original, converter);
     Item parsed{};
     rai::serialization::readJsonString(json, parsed, converter);
@@ -139,7 +139,46 @@ int main() {
 ```
 
 Notes:
-- `makeObjectSerializerConverter<T>(serializer)` is the preferred way to override nested object fields explicitly.
+- `getObjectSerializerConverter<T>(serializer)` is the preferred way to override nested object fields explicitly.
+
+## Using getColumnarConverter 🧩
+Use `getColumnarConverter<T>(serializer)` for row-oriented containers when you want JSON output in a compact, columnar table format.
+
+```cpp
+import rai.serialization.core;
+import rai.serialization.json_io;
+
+struct Item {
+    int id{};
+    std::string name{};
+};
+
+static const auto itemFields = rai::serialization::getFieldSet(
+    rai::serialization::getRequiredField(&Item::id, "id"),
+    rai::serialization::getRequiredField(&Item::name, "name")
+);
+
+static auto getColumnarItemConverter() {
+    return rai::serialization::getColumnarConverter<Item>(itemFields);
+}
+
+int main() {
+    std::vector<Item> original{
+        {1, "one"},
+        {2, "two"}
+    };
+
+    auto converter = getColumnarItemConverter();
+    std::string json = rai::serialization::getJsonContent(original, converter);
+    // json == [["id","name"],[1,"one"],[2,"two"]]
+
+    std::vector<Item> parsed;
+    rai::serialization::readJsonString(json, parsed, converter);
+}
+```
+
+Notes:
+- `getColumnarConverter<T>(serializer)` is useful for serializing tabular data as a header row plus value rows.
 
 ## File input variants and unknown keys 🗂️
 File loading supports sequential, parallel, and auto-selected paths. You can also collect unknown keys.
