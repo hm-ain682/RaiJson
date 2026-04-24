@@ -551,7 +551,7 @@ struct ExplicitNestedParent {
             getRequiredField(&ExplicitNestedChild::name, "n")
         );
         static const auto childConverter =
-            makeObjectSerializerConverter<ExplicitNestedChild>(childFields);
+            getObjectSerializerConverter<ExplicitNestedChild>(childFields);
         static const auto fields = getFieldSet(
             getRequiredField(&ExplicitNestedParent::child, "child", childConverter),
             getRequiredField(&ExplicitNestedParent::flag, "flag")
@@ -953,7 +953,7 @@ static auto makeJsonIOConverter() {
         getRequiredField(&JsonIOConverterTestType::x, "x"),
         getRequiredField(&JsonIOConverterTestType::y, "y")
     );
-    return makeObjectSerializerConverter<JsonIOConverterTestType>(fields);
+    return getObjectSerializerConverter<JsonIOConverterTestType>(fields);
 }
 
 /// @brief Converter版 getJsonContent/readJsonString のテスト。

@@ -131,7 +131,7 @@ private:
 };
 
 template <typename T, typename Serializer>
-constexpr auto makeObjectSerializerConverter(const Serializer& serializer) {
+constexpr auto getObjectSerializerConverter(const Serializer& serializer) {
     return ObjectSerializerConverter<T, Serializer>{serializer};
 }
 
