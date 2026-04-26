@@ -58,11 +58,14 @@ if(RAISERIALIZATION_BUILD_TEST_HELPER)
 endif()
 
 # Build the more extensive tests
-add_executable(RaiSerialization_JsonTest JsonTest.cpp)
+add_executable(RaiSerialization_JsonTest
+    JsonTest.cpp
+    ContainerConverterTest.cpp)
 target_link_libraries(RaiSerialization_JsonTest PRIVATE RaiSerialization::RaiSerializationTest GTest::gtest_main)
 target_sources(RaiSerialization_JsonTest PRIVATE JsonEnumFieldTest.cpp)
 add_test(NAME RaiSerialization_JsonTest COMMAND RaiSerialization_JsonTest)
 
-add_executable(RaiSerialization_JsonBenchmark JsonBenchmark.cpp)
+add_executable(RaiSerialization_JsonBenchmark
+    JsonBenchmark.cpp)
 target_link_libraries(RaiSerialization_JsonBenchmark PRIVATE RaiSerialization::RaiSerialization GTest::gtest_main)
 add_test(NAME RaiSerialization_JsonBenchmark COMMAND RaiSerialization_JsonBenchmark)
