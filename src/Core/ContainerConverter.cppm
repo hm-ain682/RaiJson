@@ -331,36 +331,10 @@ constexpr auto getColumnarContainerConverter(const Serializer& serializer) {
 // ******************************************************************************** 三重配列形式のmap
 
 /// @brief スカラー値を表すプレースホルダー。
-struct ScalarPlaceholder {
-    void writeHeader(FormatWriter& writer, const char* scalarName) const {
-        writer.writeObject(std::string_view(scalarName));
-    }
-
-    template <typename T>
-    void writeFieldAt(std::size_t, FormatWriter& writer, const T& value) const {
-        static_assert(IsScalarValue<T>,
-            "ScalarPlaceholder can only serialize scalar values");
-        getConverter<T>().write(writer, value);
-    }
-
-    template <typename T>
-    void readFieldAt(std::size_t, FormatReader& parser, T& value) const {
-        static_assert(IsScalarValue<T>,
-            "ScalarPlaceholder can only deserialize scalar values");
-        value = getConverter<T>().read(parser);
-    }
-
-    template <typename T>
-    void applyMissingAt(std::size_t, T&) const noexcept {
-        static_assert(IsScalarValue<T>,
-            "ScalarPlaceholder can only apply missing on scalar values");
-        // スカラー値の欠落はデフォルト初期化をそのまま使う。
-    }
-
-    std::size_t size() const noexcept {
-        return 0;
-    }
+export struct ScalarSerializer {
+    static ScalarSerializer instance;
 };
+ScalarSerializer ScalarSerializer::instance;
 
 /// @brief map型をJSON表形式で変換するConverter。
 /// @tparam Container map型コンテナ（map, unordered_map, multimap, unordered_multimap）。
@@ -512,9 +486,10 @@ private:
 /// @tparam KeySerializer キー型に対応するフィールドシリアライザ。
 /// @tparam ValueSerializer 値型に対応するフィールドシリアライザ。
 export template <typename Container, typename KeySerializer, typename ValueSerializer>
-constexpr auto getColumnarMapConverter(const KeySerializer& keySerializer,
-                               const ValueSerializer& valueSerializer) {
-    return ColumnarMapConverter<Container, KeySerializer, ValueSerializer>{keySerializer, valueSerializer};
+constexpr auto getColumnarMapConverter(
+    const KeySerializer& keySerializer, const ValueSerializer& valueSerializer) {
+    return ColumnarMapConverter<Container, KeySerializer, ValueSerializer>
+    {keySerializer, valueSerializer};
 }
 
 /// @brief キーがスカラーで値がスカラーなマップに対応するColumnarMapConverterを生成する。
@@ -526,10 +501,8 @@ constexpr auto getColumnarMapConverter() {
     using MappedType = std::remove_cvref_t<typename Element::second_type>;
     static_assert(IsScalarValue<KeyType>, "getColumnarMapConverter(): key type must be scalar");
     static_assert(IsScalarValue<MappedType>, "getColumnarMapConverter(): mapped type must be scalar");
-
-    static const ScalarPlaceholder keySerializer{};
-    static const ScalarPlaceholder valueSerializer{};
-    return ColumnarMapConverter<Container, ScalarPlaceholder, ScalarPlaceholder>{keySerializer, valueSerializer};
+    return ColumnarMapConverter<Container, ScalarSerializer, ScalarSerializer>
+    {ScalarSerializer::instance, ScalarSerializer::instance};
 }
 
 } // namespace rai::serialization
