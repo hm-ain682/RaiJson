@@ -232,15 +232,16 @@ private:
     std::reference_wrapper<const ElementConverterT> elementConverter_{};
 };
 
-/// @brief コンテナ型に対応する既定の ContainerConverter を作成する。
+/// @brief コンテナ型に対応する既定の ContainerConverter を返す。
 /// @tparam Container コンテナ型
-/// @return ContainerConverter のインスタンス
+/// @return ContainerConverter の参照
 export template <typename Container>
-constexpr auto getContainerConverter() {
+constexpr const auto& getContainerConverter() {
     using Elem = std::remove_cvref_t<std::ranges::range_value_t<Container>>;
     const auto& elementConverter = getConverter<Elem>();
     using ElemConv = std::remove_cvref_t<decltype(elementConverter)>;
-    return ContainerConverter<Container, ElemConv>(elementConverter);
+    static ContainerConverter<Container, ElemConv> converter(elementConverter);
+    return converter;
 }
 
 /// @brief 明示的な要素コンバータから `ContainerConverter` を作成する。
@@ -310,7 +311,7 @@ private:
     const Serializer& serializer_;
 };
 
-/// @brief 要素の変換方法を指定して ColumnarContainerConverter<std::vector<T>, Serializer> を返す。
+/// @brief 要素の変換方法を指定して ColumnarContainerConverter<std::vector<T>, Serializer> を作成する。
 /// @tparam T 配列要素型
 /// @tparam Serializer ObjectSerializer派生型
 export template <typename T, typename Serializer>
@@ -319,7 +320,7 @@ constexpr auto getColumnarContainerConverter(const Serializer& serializer) {
     return ColumnarContainerConverter<std::vector<T>, Serializer>{serializer};
 }
 
-/// @brief コンテナ型を指定して ColumnarContainerConverter を返す。
+/// @brief コンテナ型を指定して ColumnarContainerConverter を作成する。
 /// @tparam Container コンテナ型
 /// @tparam Serializer ObjectSerializer派生型
 export template <typename Container, typename Serializer>
@@ -492,17 +493,18 @@ constexpr auto getColumnarMapConverter(
     {keySerializer, valueSerializer};
 }
 
-/// @brief キーがスカラーで値がスカラーなマップに対応するColumnarMapConverterを生成する。
+/// @brief キーがスカラーで値がスカラーなマップに対応するColumnarMapConverterを返す。
 export template <typename Container>
 requires IsMapLikeContainer<Container>
-constexpr auto getColumnarMapConverter() {
+constexpr const auto& getColumnarMapConverter() {
     using Element = std::remove_cvref_t<std::ranges::range_value_t<Container>>;
     using KeyType = std::remove_cvref_t<std::remove_const_t<typename Element::first_type>>;
     using MappedType = std::remove_cvref_t<typename Element::second_type>;
     static_assert(IsScalarValue<KeyType>, "getColumnarMapConverter(): key type must be scalar");
     static_assert(IsScalarValue<MappedType>, "getColumnarMapConverter(): mapped type must be scalar");
-    return ColumnarMapConverter<Container, ScalarSerializer, ScalarSerializer>
-    {ScalarSerializer::instance, ScalarSerializer::instance};
+    static ColumnarMapConverter<Container, ScalarSerializer, ScalarSerializer> converter
+    (ScalarSerializer::instance, ScalarSerializer::instance);
+    return converter;
 }
 
 } // namespace rai::serialization

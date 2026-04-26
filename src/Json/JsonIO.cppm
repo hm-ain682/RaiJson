@@ -217,7 +217,7 @@ void readJsonString(const std::string& jsonText, typename Converter::Value& out,
     tokenizer.tokenize();
 
     JsonParser parser(tokenManager);
-    out = read(parser, converter);
+    out = converter.read(parser);
     unknownKeysOut = std::move(parser.getUnknownKeys());
 }
 
@@ -482,7 +482,7 @@ void readJsonFile(const std::string& filename, typename Converter::Value& out,
     tokenizer.tokenize();
 
     JsonParser parser(tokenManager);
-    out = read(parser, converter);
+    out = converter.read(parser);
 }
 
 // write/readメソッドを持つ型専用のオーバーロード

@@ -146,6 +146,11 @@ private:
     const Serializer& serializer_;
 };
 
+/// @brief ObjectSerializer派生を指定して ObjectSerializerConverter を作成する。
+/// @tparam T 対象オブジェクト型
+/// @tparam Serializer ObjectSerializer派生クラス
+/// @param serializer ObjectSerializer派生クラスのインスタンス
+/// @return ObjectSerializerConverter のインスタンス
 template <typename T, typename Serializer>
 constexpr auto getObjectSerializerConverter(const Serializer& serializer) {
     return ObjectSerializerConverter<T, Serializer>{serializer};
@@ -454,15 +459,9 @@ struct UniquePtrConverter {
     static_assert(IsObjectConverter<ElemConvT, Element>,
         "UniquePtrConverter requires ElementConverter to be an ObjectConverter for element type");
 
-    // デフォルト要素コンバータへの参照を返すユーティリティ（静的寿命）
-    static const ElemConvT& defaultTargetConverter() {
-        static const ElemConvT& inst = getConverter<Element>();
-        return inst;
-    }
-
     // デフォルトコンストラクタはデフォルト要素コンバータへの参照を初期化子リストで設定する
     UniquePtrConverter()
-        : targetConverter_(std::cref(defaultTargetConverter())) {}
+        : targetConverter_(std::cref(getConverter<Element>())) {}
 
     // 明示的に要素コンバータ参照を指定するオーバーロード
     constexpr explicit UniquePtrConverter(const ElemConvT& conv)
@@ -758,11 +757,12 @@ private:
 
 /// @brief Variant 用の TokenDispatchConverter を構築するヘルパー（既定の要素変換器）。
 template <typename Variant>
-constexpr auto getVariantConverter() {
+constexpr const auto& getVariantConverter() {
     static_assert(IsStdVariant<Variant>,
         "getVariantConverter requires Variant to be a std::variant");
     using ElementConverter = VariantElementConverter<Variant>;
-    return TokenDispatchConverter<Variant, ElementConverter>(ElementConverter{});
+    static TokenDispatchConverter<Variant, ElementConverter> converter(ElementConverter{});
+    return converter;
 }
 
 /// @brief Variant 用の TokenDispatchConverter を構築するヘルパー（要素変換器指定）。
@@ -776,32 +776,6 @@ constexpr auto getVariantConverter(ElementConverterType elementConverter) {
     using ElementConverter = std::remove_cvref_t<ElementConverterType>;
     return TokenDispatchConverter<Variant, ElementConverter>(
         ElementConverter(std::move(elementConverter)));
-}
-
-// ******************************************************************************** 汎用的な読み書き関数
-
-/// @brief valueをconverterで変換してwriterに書き出す。
-/// @tparam Converter 
-/// @tparam Value 
-/// @param writer 
-/// @param converter 
-/// @param value 
-template <typename Converter, typename Value>
-    requires IsObjectConverter<Converter, Value>
-void write(JsonWriter& writer, const Converter& converter, const Value& value) {
-    converter.write(writer, value);
-}
-
-/// @brief parserから読み込んでconverterでValueに変換して返す。
-/// @tparam Converter 
-/// @tparam Value 
-/// @param parser 
-/// @param converter 
-/// @return 変換後のValue
-template <typename Converter>
-    requires IsObjectConverter<Converter, typename Converter::Value>
-typename Converter::Value read(JsonParser& parser, const Converter& converter) {
-    return converter.read(parser);
 }
 
 }  // namespace rai::serialization
