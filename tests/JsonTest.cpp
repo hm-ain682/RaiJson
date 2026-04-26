@@ -14,6 +14,7 @@ import rai.collection.sorted_hash_array_map;
 #include <set>
 #include <utility>
 #include <typeindex>
+#include <map>
 
 using namespace rai::serialization;
 using namespace rai::serialization::test;
@@ -939,6 +940,10 @@ TEST(HasReadWriteFormatTest, RoundTrip) {
     testJsonRoundTrip(original, "{value:42,name:\"test\"}");
 }
 
+// ********************************************************************************
+// ObjectSerializerConverter テスト
+// ********************************************************************************
+
 struct JsonIOConverterTestType {
     int x = 0;
     std::string y;
@@ -966,35 +971,6 @@ TEST(JsonIOConverterTest, ReadWriteWithConverter) {
         makeJsonIOConverter());
 }
 
-struct ColumnarJsonTestItem {
-    int id = 0;
-    std::string name;
-
-    bool operator==(const ColumnarJsonTestItem& other) const {
-        return id == other.id && name == other.name;
-    }
-};
-
-static auto getColumnarConverterTest() {
-    static const auto fields = getFieldSet(
-        getRequiredField(&ColumnarJsonTestItem::id, "id"),
-        getRequiredField(&ColumnarJsonTestItem::name, "name")
-    );
-    return getColumnarConverter<ColumnarJsonTestItem>(fields);
-}
-
-TEST(JsonIOConverterTest, ColumnarConverterRoundTrip) {
-    std::vector<ColumnarJsonTestItem> original{
-        {1, "one"},
-        {2, "two"}
-    };
-    auto converter = getColumnarConverterTest();
-
-    testJsonRoundTrip(original,
-        "[[\"id\",\"name\"],[1,\"one\"],[2,\"two\"]]",
-        converter);
-}
-
 /// @brief Converter版 readJsonFile のテスト。
 TEST(JsonIOConverterTest, ReadJsonFileWithConverter) {
     std::string filename = "test_converter.json";
@@ -1012,7 +988,106 @@ TEST(JsonIOConverterTest, ReadJsonFileWithConverter) {
 }
 
 // ********************************************************************************
-// テストカテゴリ：JsonContainerField
+// ColumnarContainerConverter テスト
+// ********************************************************************************
+
+struct ColumnarJsonTestItem {
+    int id = 0;
+    std::string name;
+
+    bool operator==(const ColumnarJsonTestItem& other) const {
+        return id == other.id && name == other.name;
+    }
+};
+
+static auto getColumnarContainerConverterTest() {
+    static const auto fields = getFieldSet(
+        getRequiredField(&ColumnarJsonTestItem::id, "id"),
+        getRequiredField(&ColumnarJsonTestItem::name, "name")
+    );
+    return getColumnarContainerConverter<ColumnarJsonTestItem>(fields);
+}
+
+TEST(JsonIOConverterTest, ColumnarContainerConverterRoundTrip) {
+    std::vector<ColumnarJsonTestItem> original{
+        {1, "one"},
+        {2, "two"}
+    };
+    auto converter = getColumnarContainerConverterTest();
+
+    testJsonRoundTrip(original,
+        "[[\"id\",\"name\"],[1,\"one\"],[2,\"two\"]]",
+        converter);
+}
+
+// ********************************************************************************
+// ColumnarMapConverter テスト
+// ********************************************************************************
+
+struct MapKey {
+    std::string A;
+    int B = 0;
+
+    bool operator<(const MapKey& other) const {
+        return A < other.A || (A == other.A && B < other.B);
+    }
+
+    bool operator==(const MapKey& other) const {
+        return A == other.A && B == other.B;
+    }
+};
+
+struct MapValue {
+    bool C = false;
+    std::string D;
+
+    bool operator==(const MapValue& other) const {
+        return C == other.C && D == other.D;
+    }
+};
+
+static auto getColumnarMapConverterTest() {
+    static const auto keyFields = getFieldSet(
+        getRequiredField(&MapKey::A, "A"),
+        getRequiredField(&MapKey::B, "B")
+    );
+    static const auto valueFields = getFieldSet(
+        getRequiredField(&MapValue::D, "D"),
+        getRequiredField(&MapValue::C, "C")
+    );
+    return getColumnarMapConverter<std::map<MapKey, MapValue>>(keyFields, valueFields);
+}
+
+TEST(JsonIOConverterTest, ColumnarMapConverterObjectRoundTrip) {
+    std::map<MapKey, MapValue> original{
+        {{"a1", 1}, {true, "d1"}},
+        {{"a2", 2}, {false, "d2"}}
+    };
+    auto converter = getColumnarMapConverterTest();
+
+    testJsonRoundTrip(original,
+        "["
+            "[[\"A\",\"B\"],[\"D\",\"C\"]],"
+            "[[\"a1\",1],[\"d1\",true]],"
+            "[[\"a2\",2],[\"d2\",false]]"
+        "]",
+        converter);
+}
+
+TEST(JsonIOConverterTest, ColumnarMapConverterScalarRoundTrip) {
+    std::map<std::string, int> original{
+        {"k1", 1},
+        {"k2", 2}
+    };
+    auto converter = getColumnarMapConverter<decltype(original)>();
+
+    testJsonRoundTrip(original,
+        "[[\"Key\",\"Value\"],[\"k1\",1],[\"k2\",2]]",
+        converter);
+}
+
+// ********************************************************************************
+// ContainerConverter テスト
 // ********************************************************************************
 
 /// @brief JsonContainerFieldのテスト用の単純なカスタム型。

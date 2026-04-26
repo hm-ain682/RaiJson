@@ -25,6 +25,7 @@ module;
 export module rai.serialization.core:polymorphic_converter;
 
 import :object_converter;
+import :container_converter;
 import :object_serializer;
 import rai.collection.sorted_hash_array_map;
 import rai.serialization.token_manager;

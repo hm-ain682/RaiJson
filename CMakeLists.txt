@@ -30,6 +30,7 @@ target_sources(RaiSerialization
             src/Core/TokenManager.cppm
             src/Core/FormatIO.cppm
             src/Core/ObjectConverter.cppm
+            src/Core/ContainerConverter.cppm
             src/Core/FieldSerializer.cppm
             src/Core/PolymorphicConverter.cppm
             src/Core/ObjectSerializer.cppm

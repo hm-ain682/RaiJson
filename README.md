@@ -141,8 +141,8 @@ int main() {
 Notes:
 - `getObjectSerializerConverter<T>(serializer)` is the preferred way to override nested object fields explicitly.
 
-## Using getColumnarConverter 🧩
-Use `getColumnarConverter<T>(serializer)` for row-oriented containers when you want JSON output in a compact, columnar table format.
+## Using getColumnarContainerConverter 🧩
+Use `getColumnarContainerConverter<T>(serializer)` for row-oriented containers when you want JSON output in a compact, columnar table format.
 
 ```cpp
 import rai.serialization.core;
@@ -159,7 +159,7 @@ static const auto itemFields = rai::serialization::getFieldSet(
 );
 
 static auto getColumnarItemConverter() {
-    return rai::serialization::getColumnarConverter<Item>(itemFields);
+    return rai::serialization::getColumnarContainerConverter<Item>(itemFields);
 }
 
 int main() {
@@ -178,7 +178,7 @@ int main() {
 ```
 
 Notes:
-- `getColumnarConverter<T>(serializer)` is useful for serializing tabular data as a header row plus value rows.
+- `getColumnarContainerConverter<T>(serializer)` is useful for serializing tabular data as a header row plus value rows.
 
 ## File input variants and unknown keys 🗂️
 File loading supports sequential, parallel, and auto-selected paths. You can also collect unknown keys.
