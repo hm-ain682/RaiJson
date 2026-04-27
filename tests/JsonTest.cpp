@@ -215,6 +215,35 @@ struct InitialOmitFieldTest {
     }
 };
 
+struct PropertyFieldTest {
+private:
+    std::string bar;
+
+public:
+    const std::string& getBar() const {
+        return bar;
+    }
+
+    void setBar(std::string_view value) {
+        bar = value;
+    }
+
+    bool equals(const PropertyFieldTest& other) const {
+        return bar == other.bar;
+    }
+};
+
+TEST(JsonPropertySerializer, ReadWriteViaGetterSetter) {
+    PropertyFieldTest original;
+    original.setBar("hello");
+
+    static const auto fields = getFieldSet(
+        getRequiredProperty(&PropertyFieldTest::getBar, &PropertyFieldTest::setBar, "bar")
+    );
+    testJsonRoundTrip(original, "{bar:\"hello\"}",
+        getObjectSerializerConverter<PropertyFieldTest>(fields));
+}
+
 TEST(JsonPolymorphicTest, ReadSingleCustomKey) {
     Holder original;
     original.item = std::make_unique<POne>();

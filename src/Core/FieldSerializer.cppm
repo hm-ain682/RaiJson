@@ -234,14 +234,6 @@ private:
     OmittedBehavior omittedBehavior_{};                  ///< 省略時挙動
 };
 
-/// @brief FieldSerializer の型推論ガイド（reference_wrapper + 省略時挙動）。
-/// @tparam MemberPtr メンバポインタ型
-/// @tparam Converter コンバータ型
-/// @tparam OmittedBehavior 省略時挙動型
-export template <typename MemberPtr, typename Converter, typename OmittedBehavior>
-FieldSerializer(MemberPtr, const char*, std::reference_wrapper<const Converter>, OmittedBehavior)
-    -> FieldSerializer<MemberPtr, Converter, OmittedBehavior>;
-
 /// @brief 値変換方法と省略時挙動を指定しFieldSerializerを作って返す。
 /// @param memberPtr メンバポインタ
 /// @param keyName JSONキー名
@@ -359,6 +351,250 @@ constexpr auto getInitialAlwaysField(MemberPtr memberPtr, const char* keyName,
     using Value = MemberPointerValueType<MemberPtr>;
     InitialAlwaysFieldOmitBehavior<Value> behavior{};
     return getField(memberPtr, keyName, converter, std::move(behavior));
+}
+
+// ******************************************************************************** プロパティ
+
+/// @brief getter メンバー関数の特性を抽出するメタ関数。
+/// @tparam T getter の型。
+template <typename T>
+struct PropertyGetterTraits;
+
+template <typename OwnerType, typename ReturnValue>
+struct PropertyGetterTraits<ReturnValue (OwnerType::*)() const> {
+    using Owner = OwnerType;
+    using Return = ReturnValue;
+    using Value = std::remove_cvref_t<std::remove_reference_t<Return>>;
+};
+
+template <typename OwnerType, typename ReturnValue>
+struct PropertyGetterTraits<ReturnValue (OwnerType::*)()> {
+    using Owner = OwnerType;
+    using Return = ReturnValue;
+    using Value = std::remove_cvref_t<std::remove_reference_t<Return>>;
+};
+
+/// @brief getter から対応する値型を取り出す型エイリアス。
+export template <typename Getter>
+using PropertyGetterValueType = typename PropertyGetterTraits<Getter>::Value;
+
+/// @brief Setter が getter の値型を受け取れるか判定する concept。
+/// @tparam Getter getter の型。
+/// @tparam Setter setter の型。
+export template <typename Getter, typename Setter>
+concept IsPropertySetter = requires(typename PropertyGetterTraits<Getter>::Owner& owner,
+    typename PropertyGetterTraits<Getter>::Value value, Setter setter) {
+    { std::invoke(setter, owner, std::move(value)) } -> std::same_as<void>;
+};
+
+/// @brief getter/setter で JSON フィールドをアクセスする。
+export template <typename Getter, typename Setter, typename Converter,
+    typename OmittedBehavior>
+struct PropertySerializer {
+    static_assert(std::is_member_function_pointer_v<Getter>,
+        "PropertySerializer requires Getter to be a member function pointer");
+    static_assert(std::is_member_function_pointer_v<Setter>,
+        "PropertySerializer requires Setter to be a member function pointer");
+    using Owner = typename PropertyGetterTraits<Getter>::Owner;
+    using Value = typename PropertyGetterTraits<Getter>::Value;
+    static_assert(IsObjectConverter<Converter, Value>,
+        "Converter must satisfy IsObjectConverter for the getter value type");
+    static_assert(IsFieldOmitBehavior<OmittedBehavior, Value>,
+        "OmittedBehavior must satisfy IsFieldOmitBehavior for the getter value type");
+    static_assert(IsPropertySetter<Getter, Setter>,
+        "Setter must be callable with Owner& and the getter value type");
+
+    /// @brief コンストラクタ（省略時挙動を明示的に指定する版）。
+    /// @param getter メンバー関数ポインタ（読み取り用）。
+    /// @param setter メンバー関数ポインタ（書き込み用）。
+    /// @param keyName JSONキー名
+    /// @param conv コンバータへの参照（呼び出し側で寿命を保証）
+    /// @param behavior 省略時挙動
+    constexpr explicit PropertySerializer(Getter getter, Setter setter,
+        const char* keyName, std::reference_wrapper<const Converter> conv,
+        OmittedBehavior behavior)
+        : getter_(getter), setter_(setter), key(keyName), converter_(conv),
+          omittedBehavior_(std::move(behavior)) {}
+
+    /// @brief JSON から値を読み取り、所有者のプロパティに設定する。
+    /// @param parser 読み取り元の FormatReader。
+    /// @param owner 代入先の所有者。
+    void read(FormatReader& parser, Owner& owner) const {
+        auto value = converter_.get().read(parser);
+        std::invoke(setter_, owner, std::move(value));
+    }
+
+    /// @brief JSON項目（キーと値）を書き出す。
+    /// @param writer 書き込み先の FormatWriter。
+    /// @param owner 書き出し元の所有者。
+    void write(FormatWriter& writer, const Owner& owner) const {
+        const auto& value = std::invoke(getter_, owner);
+        if (omittedBehavior_.shouldSkipWrite(value)) {
+            return;
+        }
+        writer.key(key);
+        converter_.get().write(writer, value);
+    }
+
+    /// @brief JSONの値のみを書き出す。
+    /// @param writer 書き込み先の FormatWriter。
+    /// @param owner 書き出し元の所有者。
+    void writeValue(FormatWriter& writer, const Owner& owner) const {
+        const auto& value = std::invoke(getter_, owner);
+        converter_.get().write(writer, value);
+    }
+
+    /// @brief 欠落時の挙動を適用する。
+    /// @param owner 欠落時に代入する対象の所有者
+    void applyMissing(Owner& owner) const {
+        Value value{};
+        omittedBehavior_.applyMissing(value, key);
+        std::invoke(setter_, owner, std::move(value));
+    }
+
+    const char* key{};                             ///< JSONキー名
+private:
+    Getter getter_{};                              ///< 読み取り用 getter
+    Setter setter_{};                              ///< 書き込み用 setter
+    std::reference_wrapper<const Converter> converter_;  ///< 値変換器への参照
+    OmittedBehavior omittedBehavior_{};                  ///< 省略時挙動
+};
+
+/// @brief PropertySerializer の型推論ガイド（reference_wrapper + 省略時挙動）。
+/// @tparam Getter getter の型
+/// @tparam Setter setter の型
+/// @tparam Converter コンバータ型
+/// @tparam OmittedBehavior 省略時挙動型
+export template <typename Getter, typename Setter, typename Converter,
+    typename OmittedBehavior>
+PropertySerializer(Getter, Setter, const char*, std::reference_wrapper<const Converter>, OmittedBehavior)
+    -> PropertySerializer<Getter, Setter, Converter, OmittedBehavior>;
+
+/// @brief 値変換方法と省略時挙動を指定しPropertySerializerを作って返す。
+/// @param getter getter のメンバ関数ポインタ
+/// @param setter setter のメンバ関数ポインタ
+/// @param keyName JSONキー名
+/// @param converter 値型に対応するコンバータ
+/// @param omitBehavior 省略時挙動
+export template <typename Getter, typename Setter, typename Converter,
+    typename OmitBehavior>
+constexpr auto getProperty(Getter getter, Setter setter, const char* keyName,
+    const Converter& converter, OmitBehavior omitBehavior) {
+    using ConverterBody = std::remove_cvref_t<Converter>;
+    return PropertySerializer<Getter, Setter, ConverterBody, OmitBehavior>(
+        getter, setter, keyName, std::cref(converter), std::move(omitBehavior));
+}
+
+/// @brief 項目必須のPropertySerializerを作って返す。
+///        与えられた getter の戻り値型に対するコンバータを使用する。
+///        基本型、HasSerializer、HasReadFormat/HasWriteFormat
+/// @param getter getter のメンバ関数ポインタ
+/// @param setter setter のメンバ関数ポインタ
+/// @param keyName JSONキー名
+export template <typename Getter, typename Setter>
+constexpr auto getRequiredProperty(Getter getter, Setter setter, const char* keyName) {
+    using Value = PropertyGetterValueType<Getter>;
+    const auto& converter = getConverter<Value>();
+    return getProperty(getter, setter, keyName, converter,
+        RequiredFieldOmitBehavior<Value>{});
+}
+
+/// @brief 項目必須のPropertySerializerを作って返す（コンバータ指定版）。
+/// @param getter getter のメンバ関数ポインタ
+/// @param setter setter のメンバ関数ポインタ
+/// @param keyName JSONキー名
+/// @param converter 値型に対応するコンバータ
+export template <typename Getter, typename Setter, typename Converter>
+constexpr auto getRequiredProperty(Getter getter, Setter setter, const char* keyName,
+    const Converter& converter) {
+    return getProperty(getter, setter, keyName, converter,
+        RequiredFieldOmitBehavior<PropertyGetterValueType<Getter>>{});
+}
+
+/// @brief 読み込み時省略では既定値を代入し、書き込み時既定値と一致するならスキップするPropertySerializerを返す。
+///        与えられた getter の戻り値型に対するコンバータを使用する。
+/// @param getter getter のメンバ関数ポインタ
+/// @param setter setter のメンバ関数ポインタ
+/// @param keyName JSONキー名
+/// @param defaultValue 欠落時に代入し、書き込み時の省略判定に使う値
+export template <typename Getter, typename Setter>
+constexpr auto getDefaultOmittedProperty(Getter getter, Setter setter,
+    const char* keyName, PropertyGetterValueType<Getter> defaultValue) {
+    using Value = PropertyGetterValueType<Getter>;
+    const auto& converter = getConverter<Value>();
+    DefaultMatchFieldOmitBehavior<Value> behavior{ .defaultValue = std::move(defaultValue) };
+    return getProperty(getter, setter, keyName, converter, std::move(behavior));
+}
+
+/// @brief 読み込み時省略では既定値を代入し、書き込み時既定値と一致するならスキップするPropertySerializerを返す。
+/// @param getter getter のメンバ関数ポインタ
+/// @param setter setter のメンバ関数ポインタ
+/// @param keyName JSONキー名
+/// @param defaultValue 欠落時に代入し、書き込み時の省略判定に使う値
+/// @param converter 値型に対応するコンバータ
+export template <typename Getter, typename Setter, typename Converter>
+constexpr auto getDefaultOmittedProperty(Getter getter, Setter setter,
+    const char* keyName, PropertyGetterValueType<Getter> defaultValue,
+    const Converter& converter) {
+    DefaultMatchFieldOmitBehavior<PropertyGetterValueType<Getter>> behavior
+    { .defaultValue = std::move(defaultValue) };
+    return getProperty(getter, setter, keyName, converter, std::move(behavior));
+}
+
+/// @brief 読み込み時省略では何も行わず、書き込み時既定値と一致するならスキップするPropertySerializerを返す。
+///        与えられた getter の戻り値型に対するコンバータを使用する。
+/// @param getter getter のメンバ関数ポインタ
+/// @param setter setter のメンバ関数ポインタ
+/// @param keyName JSONキー名
+/// @param defaultValue 書き込み時の省略判定に使う値
+export template <typename Getter, typename Setter>
+constexpr auto getInitialOmittedProperty(Getter getter, Setter setter,
+    const char* keyName, PropertyGetterValueType<Getter> defaultValue) {
+    using Value = PropertyGetterValueType<Getter>;
+    const auto& converter = getConverter<Value>();
+    InitialMatchFieldOmitBehavior<Value> behavior{ .defaultValue = std::move(defaultValue) };
+    return getProperty(getter, setter, keyName, converter, std::move(behavior));
+}
+
+/// @brief 読み込み時省略では何も行わず、書き込み時既定値と一致するならスキップするPropertySerializerを返す。
+/// @param getter getter のメンバ関数ポインタ
+/// @param setter setter のメンバ関数ポインタ
+/// @param keyName JSONキー名
+/// @param defaultValue 書き込み時の省略判定に使う値
+/// @param converter 値型に対応するコンバータ
+export template <typename Getter, typename Setter, typename Converter>
+constexpr auto getInitialOmittedProperty(Getter getter, Setter setter,
+    const char* keyName, PropertyGetterValueType<Getter> defaultValue,
+    const Converter& converter) {
+    InitialMatchFieldOmitBehavior<PropertyGetterValueType<Getter>> behavior
+    { .defaultValue = std::move(defaultValue) };
+    return getProperty(getter, setter, keyName, converter, std::move(behavior));
+}
+
+/// @brief 読み込み時省略では何も行わず、書き込み時は省略しないPropertySerializerを返す。
+///        与えられた getter の戻り値型に対するコンバータを使用する。
+/// @param getter getter のメンバ関数ポインタ
+/// @param setter setter のメンバ関数ポインタ
+/// @param keyName JSONキー名
+export template <typename Getter, typename Setter>
+constexpr auto getInitialAlwaysProperty(Getter getter, Setter setter,
+    const char* keyName) {
+    using Value = PropertyGetterValueType<Getter>;
+    const auto& converter = getConverter<Value>();
+    InitialAlwaysFieldOmitBehavior<Value> behavior{};
+    return getProperty(getter, setter, keyName, converter, behavior);
+}
+
+/// @brief 読み込み時省略では何も行わず、書き込み時は省略しないPropertySerializerを返す。
+/// @param getter getter のメンバ関数ポインタ
+/// @param setter setter のメンバ関数ポインタ
+/// @param keyName JSONキー名
+/// @param converter 値型に対応するコンバータ
+export template <typename Getter, typename Setter, typename Converter>
+constexpr auto getInitialAlwaysProperty(Getter getter, Setter setter,
+    const char* keyName, const Converter& converter) {
+    InitialAlwaysFieldOmitBehavior<PropertyGetterValueType<Getter>> behavior{};
+    return getProperty(getter, setter, keyName, converter, std::move(behavior));
 }
 
 }  // namespace rai::serialization

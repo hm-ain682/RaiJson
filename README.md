@@ -6,6 +6,7 @@ fast, dependency-free parsing and convenient, declarative mappings between C++ t
 ## Key features ✅
 - Zero-dependency JSON5 tokenizer, JsonParser, and writer
 - Declarative field descriptors: `getRequiredField`, `getDefaultOmittedField`, `getInitialOmittedField`, `getInitialAlwaysField`
+- Property-based field descriptors: `getProperty`, `getRequiredProperty`, `getDefaultOmittedProperty`, `getInitialOmittedProperty`, `getInitialAlwaysProperty`
 - Enum and polymorphic converters: `getEnumConverter`, `getPolymorphicConverter`, `getPolymorphicArrayConverter`
 - Polymorphic object support (single object and arrays) using type tags
 - Small, fixed-capacity sorted-hash array map for fast key lookup without heap allocations
@@ -108,6 +109,33 @@ int main() {
     Point out{};
     rai::serialization::readJsonString(json, out);
 }
+
+## Property-based field access 🧩
+When a type exposes values through getter/setter methods instead of public member variables, use `getProperty` or `getRequiredProperty`.
+
+```cpp
+import rai.serialization.core;
+import rai.serialization::json_io;
+
+struct Foo {
+    std::string bar;
+
+    const std::string& getBar() const {
+        return bar;
+    }
+
+    void setBar(std::string_view value) {
+        bar = value;
+    }
+
+    const rai::serialization::ObjectSerializer& serializer() const {
+        static const auto fields = rai::serialization::getFieldSet(
+            rai::serialization::getRequiredProperty(
+                &Foo::getBar, &Foo::setBar, "bar")
+        );
+        return fields;
+    }
+};
 ```
 
 ## Using getObjectSerializerConverter 🧩
